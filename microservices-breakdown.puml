@@ -1,0 +1,51 @@
+@startuml
+!theme plain
+skinparam componentStyle uml2
+
+node "Web/Mobile Clients" as Client
+component "api-gateway" as Gateway
+
+component "identity-service" as Identity
+component "catalog-service" as Catalog
+component "booking-service" as Booking
+component "payment-service" as Payment
+component "notification-service" as Notification
+component "analytics-service" as Analytics
+
+queue "Domain Event Bus" as Bus
+
+database "Users Store" as UsersDB
+database "Analytics Read Store" as AnalyticsDB
+database "Redis Locks (TTL 8 min)" as RedisLocks
+
+cloud "Stripe" as Stripe
+
+Client --> Gateway : HTTPS
+
+Gateway --> Identity : auth, JWT
+Gateway --> Catalog : browse
+Gateway --> Booking : book seats
+Gateway --> Payment : payment init
+
+Identity --> UsersDB
+Booking --> RedisLocks
+Analytics --> AnalyticsDB
+Payment --> Stripe
+
+Booking ..> Bus : BookingConfirmed
+Payment ..> Bus : PaymentSucceeded, PaymentFailed
+Booking ..> Bus : subscribe PaymentSucceeded, PaymentFailed
+Notification ..> Bus : subscribe
+Analytics ..> Bus : subscribe
+
+note right of Booking
+  Seat state machine:
+  AVAILABLE -> LOCKED -> RESERVED -> CONFIRMED -> CANCELLED
+  Saga orchestrator
+end note
+
+note top of Gateway
+  JWT validation, rate limiting,
+  routing, request logging
+end note
+@enduml

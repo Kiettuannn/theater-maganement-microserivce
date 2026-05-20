@@ -1,0 +1,39 @@
+@startuml
+!theme plain
+skinparam componentStyle uml2
+
+actor "Customer" as Customer
+component "api-gateway" as Gateway
+component "identity-service" as Identity
+component "catalog-service" as Catalog
+component "booking-service" as Booking
+component "payment-service" as Payment
+component "notification-service" as Notification
+component "analytics-service" as Analytics
+queue "Kafka" as Kafka
+
+' Sync request/response paths
+Customer --> Gateway : Browse / Select Seats
+Gateway --> Identity : JWT validation
+Gateway --> Catalog : Browse catalog
+Gateway --> Booking : Seat lock
+Catalog --> Gateway : Catalog response
+Booking --> Gateway : Seat lock result
+Gateway --> Customer : Immediate response
+
+' Async event chain
+Booking ..> Kafka : BookingConfirmed
+Kafka ..> Payment : BookingConfirmed
+Payment ..> Kafka : PaymentSucceeded/Failed
+Kafka ..> Notification : Notify customer
+Kafka ..> Analytics : Update projections
+
+note right of Gateway
+  Sync paths require immediate response
+end note
+
+note right of Kafka
+  Async paths tolerate
+  eventual consistency
+end note
+@enduml
