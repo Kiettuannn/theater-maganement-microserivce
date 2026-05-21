@@ -1,6 +1,6 @@
 package identity.example.identity.enums;
 
-public enum Role {
+public enum RoleName {
     ADMIN,
     USER
 }
