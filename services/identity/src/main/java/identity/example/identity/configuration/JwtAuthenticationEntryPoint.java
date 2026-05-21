@@ -1,6 +1,7 @@
 package identity.example.identity.configuration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import identity.example.identity.dto.response.ApiResponse;
 import identity.example.identity.exception.ErrorCode;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

@@ -1,20 +1,20 @@
 services:
-
   identity-db:
-    image: postgres:16
+    image: mysql:8.0
     container_name: identity-db
     restart: always
 
     environment:
-      POSTGRES_DB: identity_db
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
+      MYSQL_DATABASE: identity_db
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
 
     ports:
-      - "5432:5432"
+      - "3306:3306"
 
     volumes:
-      - identity_postgres_data:/var/lib/postgresql/data
+      - identity_mysql_data:/var/lib/mysql
 
     networks:
       - microservices-network
@@ -73,7 +73,7 @@ services:
 
 
 volumes:
-  identity_postgres_data:
+  identity_mysql_data:
   booking_postgres_data:
   catalog_postgres_data:
 

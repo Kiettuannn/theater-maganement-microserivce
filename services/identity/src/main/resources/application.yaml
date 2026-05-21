@@ -3,14 +3,14 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/identity_db
+    url: jdbc:mysql://localhost:3306/identity_db
+    driver-class-name: com.mysql.cj.jdbc.Driver
     username: admin
     password: admin
 
   jpa:
     hibernate:
       ddl-auto: update
-
     show-sql: true
 
     properties:

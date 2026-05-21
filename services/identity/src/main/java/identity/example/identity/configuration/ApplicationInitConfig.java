@@ -29,9 +29,9 @@ public class ApplicationInitConfig {
 
     @Bean
     @ConditionalOnProperty(
-            prefix = "spring.datasource",
-            name = "driver-class-name",
-            havingValue = "org.postgresql.Driver")
+            prefix = "spring",
+            value = "datasource.driver-class-name",
+            havingValue = "com.mysql.cj.jdbc.Driver")
     ApplicationRunner applicationRunner(){
         return args ->  {
             if(userRepository.findByUsername("admin").isEmpty()){
@@ -47,7 +47,8 @@ public class ApplicationInitConfig {
                         .password(passwordEncoder.encode("admin"))
                         .roles(Set.of(adminRole))
                         .build();
-
+                userRepository.save(user);
+                log.warn("Admin user has been created with default password: admin, please change it");
             }
         };
     }
