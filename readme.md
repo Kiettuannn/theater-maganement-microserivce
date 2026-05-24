@@ -8,6 +8,10 @@
   - Dashed lines: Asynchronous communication (Message queues/events)
     ![Theater Microservice](./bounded-context.png)
 
+# High level architecture:
+![Hight level Theater Microservice](./high-level-architecture.jpg)]
+
+
 # Microservices breakdown
 
 Seven services map cleanly to the bounded contexts. The reasoning for each boundary is deliberate:
