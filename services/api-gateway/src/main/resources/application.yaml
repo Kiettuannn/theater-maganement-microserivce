@@ -13,10 +13,10 @@ spring:
         webflux:
           routes:
             - id: identity_service
-            - uri: http://localhost:8080
-            - predicates:
+              uri: http://localhost:8081
+              predicates:
                 - Path=${app.api-prefix}/identity/**
-            - filters:
-                - StripPrefix=1
+              filters:
+                  - StripPrefix=1
 
 
