@@ -1,0 +1,290 @@
+import { FC, useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  Card,
+  Row,
+  Col,
+  Button,
+  Space,
+  Divider,
+  QRCode,
+  Empty,
+  Alert,
+  Typography,
+} from 'antd';
+import { CheckCircleOutlined, PrinterOutlined, DownloadOutlined } from '@ant-design/icons';
+import { getMovieById, getCinemaById, getShowtimesByMovieId } from '../lib/mock-data';
+import dayjs from 'dayjs';
+import '../styles/App.css';
+
+const { Title, Text } = Typography;
+
+interface BookingData {
+  movieId: string;
+  cinemaId: string;
+  showtimeId: string;
+  selectedSeats: string[];
+  totalPrice: number;
+  date: string;
+  orderId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  paymentMethod: string;
+  paymentDate: string;
+}
+
+const Confirmation: FC = () => {
+  const { orderId } = useParams<{ orderId: string }>();
+  const navigate = useNavigate();
+  const [booking, setBooking] = useState<BookingData | null>(null);
+
+  useEffect(() => {
+    if (orderId) {
+      const saved = localStorage.getItem(`booking-${orderId}`);
+      if (saved) {
+        setBooking(JSON.parse(saved));
+      }
+    }
+  }, [orderId]);
+
+  if (!booking) {
+    return (
+      <div className="page-container">
+        <Empty
+          description="Booking not found"
+          children={
+            <Button type="primary" onClick={() => navigate('/')}>
+              Back to Home
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  const movie = getMovieById(booking.movieId);
+  const cinema = getCinemaById(booking.cinemaId);
+  const showtimes = getShowtimesByMovieId(booking.movieId);
+  const showtime = showtimes.find((s) => s.id === booking.showtimeId);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleDownload = () => {
+    const element = document.getElementById('ticket-content');
+    if (element) {
+      const printContents = element.innerHTML;
+      const win = window.open('', '', 'height=500,width=800');
+      if (win) {
+        win.document.write('<html><head><title>Ticket</title></head><body>');
+        win.document.write(printContents);
+        win.document.write('</body></html>');
+        win.document.close();
+        win.print();
+      }
+    }
+  };
+
+  return (
+    <div className="page-container">
+      <Row gutter={[32, 32]} justify="center">
+        <Col xs={24} md={18} lg={14}>
+          <div id="ticket-content">
+            <Card style={{ textAlign: 'center' }}>
+              <Space direction="vertical" style={{ width: '100%' }} size="large">
+                <div>
+                  <CheckCircleOutlined
+                    style={{ fontSize: '48px', color: '#10B981', marginBottom: '16px' }}
+                  />
+                  <Title level={2} style={{ color: '#0052A3', margin: '0' }}>
+                    Booking Confirmed!
+                  </Title>
+                  <Text type="secondary" style={{ fontSize: '16px' }}>
+                    Your tickets have been successfully booked
+                  </Text>
+                </div>
+
+                <Alert
+                  message="A confirmation email has been sent to your email address"
+                  type="success"
+                  showIcon
+                />
+
+                <Card style={{ backgroundColor: '#E6F2FF', borderColor: '#0052A3' }}>
+                  <Row gutter={[16, 16]}>
+                    <Col xs={24}>
+                      <Text type="secondary">Order ID</Text>
+                      <Title level={4} style={{ margin: '0' }}>
+                        {booking.orderId}
+                      </Title>
+                    </Col>
+
+                    <Col xs={24}>
+                      <QRCode
+                        value={JSON.stringify({
+                          orderId: booking.orderId,
+                          movie: movie?.title,
+                          date: booking.date,
+                          seats: booking.selectedSeats,
+                        })}
+                        style={{ margin: '0 auto' }}
+                      />
+                    </Col>
+                  </Row>
+                </Card>
+
+                <Divider />
+
+                <div style={{ textAlign: 'left' }}>
+                  <Title level={4} style={{ color: '#0052A3' }}>
+                    Ticket Details
+                  </Title>
+
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <Row>
+                      <Col xs={12}>
+                        <Text type="secondary">Movie</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {movie?.title}
+                        </div>
+                      </Col>
+                      <Col xs={12}>
+                        <Text type="secondary">Rating</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {movie?.rating.toFixed(1)}/10
+                        </div>
+                      </Col>
+                    </Row>
+
+                    <Row>
+                      <Col xs={12}>
+                        <Text type="secondary">Cinema</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {cinema?.name}
+                        </div>
+                      </Col>
+                      <Col xs={12}>
+                        <Text type="secondary">City</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {cinema?.city}
+                        </div>
+                      </Col>
+                    </Row>
+
+                    <Row>
+                      <Col xs={12}>
+                        <Text type="secondary">Date</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {dayjs(booking.date).format('DD/MM/YYYY')}
+                        </div>
+                      </Col>
+                      <Col xs={12}>
+                        <Text type="secondary">Time</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {showtime?.time}
+                        </div>
+                      </Col>
+                    </Row>
+
+                    <Row>
+                      <Col xs={12}>
+                        <Text type="secondary">Seats</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {booking.selectedSeats.sort().join(', ')}
+                        </div>
+                      </Col>
+                      <Col xs={12}>
+                        <Text type="secondary">Number of Seats</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {booking.selectedSeats.length}
+                        </div>
+                      </Col>
+                    </Row>
+                  </Space>
+                </div>
+
+                <Divider />
+
+                <div style={{ textAlign: 'left' }}>
+                  <Title level={4} style={{ color: '#0052A3' }}>
+                    Customer Information
+                  </Title>
+
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <Row>
+                      <Col xs={12}>
+                        <Text type="secondary">Name</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {booking.customerName}
+                        </div>
+                      </Col>
+                      <Col xs={12}>
+                        <Text type="secondary">Email</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {booking.customerEmail}
+                        </div>
+                      </Col>
+                    </Row>
+
+                    <Row>
+                      <Col xs={12}>
+                        <Text type="secondary">Phone</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {booking.customerPhone}
+                        </div>
+                      </Col>
+                      <Col xs={12}>
+                        <Text type="secondary">Payment Method</Text>
+                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                          {booking.paymentMethod.toUpperCase()}
+                        </div>
+                      </Col>
+                    </Row>
+                  </Space>
+                </div>
+
+                <Divider />
+
+                <Row>
+                  <Col xs={24}>
+                    <Text type="secondary">Total Amount</Text>
+                    <Title
+                      level={3}
+                      style={{ color: '#0052A3', marginTop: '8px', marginBottom: '0' }}
+                    >
+                      {booking.totalPrice.toLocaleString()} VND
+                    </Title>
+                  </Col>
+                </Row>
+
+                <Divider />
+
+                <Space style={{ width: '100%', justifyContent: 'center' }} wrap>
+                  <Button type="primary" size="large" icon={<PrinterOutlined />} onClick={handlePrint}>
+                    Print Ticket
+                  </Button>
+                  <Button size="large" icon={<DownloadOutlined />} onClick={handleDownload}>
+                    Download Ticket
+                  </Button>
+                </Space>
+
+                <Space style={{ width: '100%', justifyContent: 'center' }} wrap>
+                  <Button type="primary" size="large" onClick={() => navigate('/')}>
+                    Back to Home
+                  </Button>
+                  <Button size="large" onClick={() => navigate('/my-bookings')}>
+                    View My Bookings
+                  </Button>
+                </Space>
+              </Space>
+            </Card>
+          </div>
+        </Col>
+      </Row>
+    </div>
+  );
+};
+
+export default Confirmation;
