@@ -1,14 +1,14 @@
 import { FC, useEffect } from "react";
 import { Button, Result } from "antd";
 import { useNavigate } from "react-router-dom";
-import { clearAuthSession } from "../lib/auth";
+import { logOut } from "../services/auth";
 import "../styles/App.css";
 
 const SignOut: FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    clearAuthSession();
+    logOut();
   }, []);
 
   return (

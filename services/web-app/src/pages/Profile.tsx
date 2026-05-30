@@ -1,15 +1,22 @@
 import { FC } from "react";
 import { Card, Row, Col, Typography, Descriptions, Empty, Button } from "antd";
 import { useNavigate } from "react-router-dom";
-import { getAuthSession } from "../lib/auth";
+import {
+  selectCinemaId,
+  selectPermissions,
+  selectUserId,
+  useAuthStore,
+} from "../stores";
 import "../styles/App.css";
 
 const { Title, Text } = Typography;
 
 const Profile: FC = () => {
   const navigate = useNavigate();
-  const session = getAuthSession();
-  const user = session?.user;
+  const userId = useAuthStore(selectUserId);
+  const cinemaId = useAuthStore(selectCinemaId);
+  const permissions = useAuthStore(selectPermissions);
+  const hasProfile = Boolean(userId || cinemaId || permissions.length);
 
   return (
     <div className="page-container">
@@ -23,19 +30,16 @@ const Profile: FC = () => {
       </Row>
 
       <Card>
-        {user ? (
+        {hasProfile ? (
           <Descriptions bordered column={1} size="middle">
-            <Descriptions.Item label="Name">
-              {user.name ?? "Not set"}
-            </Descriptions.Item>
-            <Descriptions.Item label="Email">
-              {user.email ?? "Not set"}
-            </Descriptions.Item>
-            <Descriptions.Item label="Phone">
-              {user.phone ?? "Not set"}
-            </Descriptions.Item>
             <Descriptions.Item label="User ID">
-              {user.id ?? "Not set"}
+              {userId ?? "Not set"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Cinema ID">
+              {cinemaId ?? "Not set"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Permissions">
+              {permissions.length ? permissions.join(", ") : "Not set"}
             </Descriptions.Item>
           </Descriptions>
         ) : (

@@ -1,28 +1,32 @@
 import { FC, useState } from "react";
 import { Button, Form, Input, Modal, Typography, message } from "antd";
-import type { AuthSession, LoginPayload } from "../lib/auth";
-import { login } from "../lib/auth";
+import { login } from "../services/auth";
 
 const { Paragraph } = Typography;
 
 interface LoginModalProps {
   open: boolean;
   onClose: () => void;
-  onSuccess: (session: AuthSession) => void;
+  onSuccess: () => void;
+}
+
+interface LoginFormValues {
+  username: string;
+  password: string;
 }
 
 const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
-  const [form] = Form.useForm<LoginPayload>();
+  const [form] = Form.useForm<LoginFormValues>();
   const [submitting, setSubmitting] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
 
-  const handleFinish = async (values: LoginPayload) => {
+  const handleFinish = async (values: LoginFormValues) => {
     setSubmitting(true);
     try {
-      const session = await login(values);
+      await login(values.username, values.password);
       messageApi.success("Signed in successfully");
       form.resetFields();
-      onSuccess(session);
+      onSuccess();
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Login failed";
