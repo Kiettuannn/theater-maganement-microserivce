@@ -386,6 +386,82 @@ a:hover {
   padding-bottom: 4px;
 }
 
+.user-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.user-menu-trigger {
+  border: none;
+  background: var(--light-gray);
+  color: var(--dark-gray);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.user-menu-trigger:hover,
+.user-menu-trigger:focus-visible {
+  background: var(--light-blue);
+  color: var(--primary-color);
+  outline: none;
+}
+
+.user-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 12px);
+  background: var(--white);
+  border: 1px solid var(--border-gray);
+  border-radius: 12px;
+  min-width: 180px;
+  box-shadow: var(--soft-shadow);
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+  z-index: 10;
+}
+
+.user-menu:hover .user-menu-dropdown,
+.user-menu:focus-within .user-menu-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.user-menu-dropdown a,
+.user-menu-item,
+.user-menu-signout {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--dark-gray);
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.user-menu-dropdown a:hover,
+.user-menu-item:hover,
+.user-menu-signout:hover {
+  background: var(--light-gray);
+  color: var(--primary-color);
+}
+
 /* Footer Styles */
 .app-footer {
   background-color: var(--dark-gray);
