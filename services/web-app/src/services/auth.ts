@@ -10,6 +10,16 @@ import {
 import { useAuthStore } from "../stores/useAuthStore";
 import { extractCinemaIdFromToken, extractPermissionsFromToken, extractUserIdFromToken, isTokenExpired } from "../utils/jwtUtils";
 
+interface RegisterPayload {
+  username: string;
+  password: string;
+  email: string;
+  firstname?: string;
+  lastname?: string;
+  city?: string;
+  dob?: string;
+}
+
 export const login = async (username: string, password: string) => {
   const response = await httpClient.post(API.LOGIN, {
     username: username,
@@ -60,15 +70,8 @@ export const forgotPassword = async (username: string) => {
   return response.data;
 };
 
-export const resetPassword = async (
-  username: string,
-  otpCode: string,
-  newPassword: string
-) => {
-  const response = await httpClient.post(API.RESET_PASSWORD, {
-    username: username,
-    otpCode: otpCode,
-    newPassword: newPassword,
-  });
+export const register = async (payload: RegisterPayload) => {
+  const response = await httpClient.post(API.REGISTER, payload);
   return response.data;
 };
+
