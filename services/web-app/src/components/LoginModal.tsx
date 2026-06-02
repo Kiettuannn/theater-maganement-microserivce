@@ -101,12 +101,12 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
       form.resetFields();
       onSuccess();
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Login failed";
+      // const errorMessage =
+      //   error instanceof Error ? error.message : "Login failed";
       addNotification({
         type: "error",
         title: "Login failed",
-        message: errorMessage,
+        message: "Wrong username or password",
       });
     } finally {
       setSubmitting(false);

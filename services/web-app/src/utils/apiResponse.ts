@@ -20,11 +20,11 @@ export async function handleApiResponse<T>(
 
     return data.result;
   } catch (error) {
-    if (axios.isAxiosError(error)) {
-      const data = error.response?.data as Partial<ApiResponse<unknown>> | undefined;
-      const message = data?.message || error.message || "API Error";
-      throw new Error(message);
-    }
+    // if (axios.isAxiosError(error)) {
+    //   const data = error.response?.data as Partial<ApiResponse<unknown>> | undefined;
+    //   const message = data?.message || error.message || "API Error";
+    //   throw new Error(message);
+    // }
 
     throw error;
   }
