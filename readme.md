@@ -44,7 +44,7 @@ Seven services map cleanly to the bounded contexts. The reasoning for each bound
 Each service owns its data store. No service may query another's database directly — all cross-service
 reads go through published events or API calls.
 
-- `identity-service` → PostgreSQL (relational, strong consistency for user records, RBAC)
+- `identity-service` → MySQL (relational, strong consistency for user records, RBAC)
 - `catalog-service` → PostgreSQL (relational for structured movie/hall data) + Redis cache on top
 - `booking-service` → PostgreSQL (reservations, audit log) + Redis (distributed seat locks,
   WebSocket session state)
