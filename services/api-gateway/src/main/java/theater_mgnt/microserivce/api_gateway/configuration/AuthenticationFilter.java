@@ -38,6 +38,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     private String[] publicEndpoints = {
             "/identity/auth/.*",
             "/identity/users/registration",
+            "/identity/users/exists" // Public for check available user when register
     };
 
     @Value("${app.api-prefix}")

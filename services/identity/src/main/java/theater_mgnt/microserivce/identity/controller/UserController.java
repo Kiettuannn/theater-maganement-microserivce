@@ -4,6 +4,7 @@ import theater_mgnt.microserivce.identity.dto.request.UserCreationRequest;
 import theater_mgnt.microserivce.identity.dto.request.UserUpdateRequest;
 import theater_mgnt.microserivce.identity.dto.response.ApiResponse;
 import theater_mgnt.microserivce.identity.dto.response.UserResponse;
+import theater_mgnt.microserivce.identity.dto.response.UsernameAvailableResponse;
 import theater_mgnt.microserivce.identity.entity.User;
 import theater_mgnt.microserivce.identity.service.UserService;
 import jakarta.validation.Valid;
@@ -29,6 +30,13 @@ public class UserController {
         log.info("UserController:createUser");
         return ApiResponse.<UserResponse>builder()
                 .result(userService.createUser(request))
+                .build();
+    }
+
+    @GetMapping("/exists")
+    ApiResponse<UsernameAvailableResponse> usernameAvailable(@RequestParam String username) {
+        return ApiResponse.<UsernameAvailableResponse>builder()
+                .result(userService.usernameAvailable(username))
                 .build();
     }
 

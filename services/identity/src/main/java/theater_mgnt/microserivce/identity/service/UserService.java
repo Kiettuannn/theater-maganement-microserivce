@@ -5,6 +5,7 @@ import theater_mgnt.microserivce.identity.constant.PredefinedRole;
 import theater_mgnt.microserivce.identity.dto.request.UserCreationRequest;
 import theater_mgnt.microserivce.identity.dto.request.UserUpdateRequest;
 import theater_mgnt.microserivce.identity.dto.response.UserResponse;
+import theater_mgnt.microserivce.identity.dto.response.UsernameAvailableResponse;
 import theater_mgnt.microserivce.identity.entity.Role;
 import theater_mgnt.microserivce.identity.entity.User;
 import theater_mgnt.microserivce.identity.exception.AppException;
@@ -67,6 +68,20 @@ public class UserService {
 //        profileClient.createProfile(profileRequest);
 
         return userMapper.toUserResponse(user);
+    }
+
+    // This API used for check realtime validation on username register
+    public UsernameAvailableResponse usernameAvailable(String username) {
+        if (username == null || username.isBlank()) {
+            return UsernameAvailableResponse.builder()
+                    .available(false)
+                    .build();
+        }
+
+        boolean available = !userRepository.existsByUsername(username);
+        return UsernameAvailableResponse.builder()
+                .available(available)
+                .build();
     }
 
     ///  GET ALL USERS

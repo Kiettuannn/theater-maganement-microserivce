@@ -1,15 +1,8 @@
-import { FC, useState } from "react";
-import {
-  Button,
-  DatePicker,
-  Form,
-  Input,
-  Modal,
-  Typography,
-  message,
-} from "antd";
+import { FC, useEffect, useRef, useState } from "react";
+import { Button, DatePicker, Form, Input, Modal, Typography } from "antd";
 import dayjs, { Dayjs } from "dayjs";
-import { login, register } from "../services/auth";
+import { checkUsernameAvailable, login, register } from "../services/auth";
+import { useNotificationStore } from "../stores/useNotificationStore";
 
 const { Paragraph } = Typography;
 
@@ -34,23 +27,130 @@ interface RegisterFormValues {
   dob?: Dayjs;
 }
 
+type UsernameCheckStatus =
+  | "idle"
+  | "checking"
+  | "available"
+  | "exists"
+  | "error";
+
 const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
   const [form] = Form.useForm<LoginFormValues | RegisterFormValues>();
   const [submitting, setSubmitting] = useState(false);
   const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [messageApi, contextHolder] = message.useMessage();
+  const [usernameCheckStatus, setUsernameCheckStatus] =
+    useState<UsernameCheckStatus>("idle");
+  const [usernameCheckMessage, setUsernameCheckMessage] = useState<
+    string | null
+  >(null);
+  const addNotification = useNotificationStore(
+    (state) => state.addNotification,
+  );
+  const usernameValue = Form.useWatch("username", form);
+  const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastCheckedRef = useRef<string>("");
+
+  const STATUS_MAP: Record<
+    UsernameCheckStatus,
+    "validating" | "error" | "success" | "warning" | undefined
+  > = {
+    idle: undefined,
+    checking: "validating",
+    exists: "error",
+    available: "success",
+    error: "warning",
+  };
+
+  const usernameValidateStatus = isRegisterMode
+    ? STATUS_MAP[usernameCheckStatus]
+    : undefined;
+  const usernameHelp = isRegisterMode
+    ? (usernameCheckMessage ?? undefined)
+    : undefined;
+
+  const resetUsernameCheck = () => {
+    setUsernameCheckStatus("idle");
+    setUsernameCheckMessage(null);
+  };
+
+  useEffect(() => {
+    if (checkTimeoutRef.current) {
+      clearTimeout(checkTimeoutRef.current);
+      checkTimeoutRef.current = null;
+    }
+
+    if (!isRegisterMode) {
+      resetUsernameCheck();
+      lastCheckedRef.current = "";
+      return;
+    }
+
+    const username =
+      typeof usernameValue === "string" ? usernameValue.trim() : "";
+
+    if (username.length < 3) {
+      resetUsernameCheck();
+      lastCheckedRef.current = username;
+      return;
+    }
+
+    setUsernameCheckStatus("checking");
+    setUsernameCheckMessage("Checking username...");
+
+    checkTimeoutRef.current = setTimeout(() => {
+      const currentUsername = username;
+      lastCheckedRef.current = currentUsername;
+
+      checkUsernameAvailable(currentUsername)
+        .then((result) => {
+          if (lastCheckedRef.current !== currentUsername) {
+            return;
+          }
+
+          if (!result.available) {
+            setUsernameCheckStatus("exists");
+            setUsernameCheckMessage("Username already exists");
+          } else {
+            setUsernameCheckStatus("available");
+            setUsernameCheckMessage("Username is available");
+          }
+        })
+        .catch(() => {
+          if (lastCheckedRef.current !== currentUsername) {
+            return;
+          }
+
+          setUsernameCheckStatus("error");
+          setUsernameCheckMessage("Could not verify username");
+        });
+    }, 400);
+
+    return () => {
+      if (checkTimeoutRef.current) {
+        clearTimeout(checkTimeoutRef.current);
+      }
+    };
+  }, [isRegisterMode, usernameValue]);
 
   const handleLogin = async (values: LoginFormValues) => {
     setSubmitting(true);
     try {
       await login(values.username, values.password);
-      messageApi.success("Signed in successfully");
+      addNotification({
+        type: "success",
+        title: "Signed in",
+        message: "Signed in successfully",
+      });
       form.resetFields();
       onSuccess();
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Login failed";
-      messageApi.error(errorMessage);
+      addNotification({
+        type: "error",
+        title: "Login failed",
+        message: errorMessage,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -68,13 +168,22 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
         city: values.city?.trim() || undefined,
         dob: values.dob ? values.dob.format("YYYY-MM-DD") : undefined,
       });
-      messageApi.success("Registration successful");
+      addNotification({
+        type: "success",
+        title: "Registration",
+        message: "Registration successful",
+      });
       form.resetFields();
       setIsRegisterMode(false);
+      resetUsernameCheck();
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Register failed";
-      messageApi.error(errorMessage);
+      addNotification({
+        type: "error",
+        title: "Register failed",
+        message: errorMessage,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -92,17 +201,18 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
   const handleClose = () => {
     form.resetFields();
     setIsRegisterMode(false);
+    resetUsernameCheck();
     onClose();
   };
 
   const handleSwitchMode = (nextIsRegisterMode: boolean) => {
     form.resetFields();
     setIsRegisterMode(nextIsRegisterMode);
+    resetUsernameCheck();
   };
 
   return (
     <>
-      {contextHolder}
       <Modal
         open={open}
         title={isRegisterMode ? "Register" : "Sign In"}
@@ -119,9 +229,32 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
           <Form.Item
             name="username"
             label="Username"
+            validateStatus={usernameValidateStatus}
+            help={usernameHelp}
+            hasFeedback={isRegisterMode}
             rules={[
               { required: true, message: "Please enter your username" },
               { min: 3, message: "Username must be at least 3 characters" },
+              {
+                validator: async (_, value) => {
+                  if (!isRegisterMode) {
+                    return Promise.resolve();
+                  }
+
+                  const normalized =
+                    typeof value === "string" ? value.trim() : "";
+
+                  if (normalized.length < 3) {
+                    return Promise.resolve();
+                  }
+
+                  if (usernameCheckStatus === "exists") {
+                    return Promise.reject(new Error("Username already exists"));
+                  }
+
+                  return Promise.resolve();
+                },
+              },
             ]}
           >
             <Input autoComplete="username" placeholder="Username" />

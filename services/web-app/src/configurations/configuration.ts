@@ -5,5 +5,8 @@ export const CONFIG = {
 export const API = {
   LOGIN: "identity/auth/token",
   FORGOT_PASSWORD: "identity/auth/forgot-password",
-  REGISTER: "identity/users/register",
+  REGISTER: "identity/users/registration",
+  CHECK_USERNAME: "identity/users/exists",
 }
+
+

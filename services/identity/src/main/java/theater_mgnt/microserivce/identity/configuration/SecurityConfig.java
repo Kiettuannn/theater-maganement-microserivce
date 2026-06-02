@@ -18,8 +18,12 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
-    private final String[] PUBLIC_ENDPOINTS ={
+    private final String[] PUBLIC_POST_ENDPOINTS ={
         "/users/registration" , "/auth/token", "/auth/introspect", "/auth/logout", "/auth/refresh",
+    };
+
+    private final String[] PUBLIC_GET_ENDPOINTS ={
+        "/users/exists",
     };
 
     @Autowired
@@ -27,10 +31,13 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
-        httpSecurity.authorizeHttpRequests(request -> request.requestMatchers(HttpMethod.POST, PUBLIC_ENDPOINTS)
-                .permitAll()
-                .anyRequest()
-                .authenticated());
+        httpSecurity.authorizeHttpRequests(request -> request
+            .requestMatchers(HttpMethod.POST, PUBLIC_POST_ENDPOINTS)
+            .permitAll()
+            .requestMatchers(HttpMethod.GET, PUBLIC_GET_ENDPOINTS)
+            .permitAll()
+            .anyRequest()
+            .authenticated());
 
         httpSecurity.oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwtConfigurer -> jwtConfigurer
