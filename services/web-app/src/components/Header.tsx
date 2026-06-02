@@ -19,7 +19,7 @@ const Header: FC = () => {
     <header className="app-header">
       <Link to="/" className="header-logo">
         <VideoCameraOutlined style={{ marginRight: "8px" }} />
-        CinemaFlex
+        Cinema2K
       </Link>
       <nav className="header-nav">
         <Link to="/" className={isActive("/") ? "active" : ""}>
