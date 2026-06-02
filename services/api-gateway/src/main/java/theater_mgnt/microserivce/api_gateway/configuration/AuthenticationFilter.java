@@ -67,7 +67,10 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
                 return chain.filter(exchange);
             else
                 return unauthenticated(exchange.getResponse());
-        }).onErrorResume(throwable -> unauthenticated(exchange.getResponse()));
+        }).onErrorResume(throwable ->{
+            log.error("Failed when API call identity", throwable);
+            return unauthenticated(exchange.getResponse());
+        });
     }
     @Override
     public int getOrder() {

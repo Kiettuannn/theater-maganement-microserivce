@@ -71,7 +71,7 @@ public class UserService {
 
     ///  GET ALL USERS
 //    @PreAuthorize("hasAuthority('APPROVE_POST')")
-    @PreAuthorize("hasRole('ADMIN')")
+//    @PreAuthorize("hasRole('ADMIN')")
     public List<User> getUsers() {
         log.info("In method get Users");
         return userRepository.findAll();

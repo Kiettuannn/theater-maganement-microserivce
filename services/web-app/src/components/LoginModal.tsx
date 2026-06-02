@@ -1,5 +1,13 @@
 import { FC, useState } from "react";
-import { Button, DatePicker, Form, Input, Modal, Typography, message } from "antd";
+import {
+  Button,
+  DatePicker,
+  Form,
+  Input,
+  Modal,
+  Typography,
+  message,
+} from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { login, register } from "../services/auth";
 
@@ -127,7 +135,9 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
             ]}
           >
             <Input.Password
-              autoComplete={isRegisterMode ? "new-password" : "current-password"}
+              autoComplete={
+                isRegisterMode ? "new-password" : "current-password"
+              }
               placeholder="Password"
             />
           </Form.Item>
@@ -165,7 +175,7 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
                       const age = dayjs().diff(value, "year");
                       if (age < 15) {
                         return Promise.reject(
-                          new Error("Age must be at least 15")
+                          new Error("Age must be at least 15"),
                         );
                       }
 
