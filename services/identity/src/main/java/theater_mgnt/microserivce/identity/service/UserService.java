@@ -4,6 +4,7 @@ package theater_mgnt.microserivce.identity.service;
 import theater_mgnt.microserivce.identity.constant.PredefinedRole;
 import theater_mgnt.microserivce.identity.dto.request.UserCreationRequest;
 import theater_mgnt.microserivce.identity.dto.request.UserUpdateRequest;
+import theater_mgnt.microserivce.identity.dto.response.EmailAvailableResponse;
 import theater_mgnt.microserivce.identity.dto.response.UserResponse;
 import theater_mgnt.microserivce.identity.dto.response.UsernameAvailableResponse;
 import theater_mgnt.microserivce.identity.entity.Role;
@@ -80,6 +81,19 @@ public class UserService {
 
         boolean available = !userRepository.existsByUsername(username);
         return UsernameAvailableResponse.builder()
+                .available(available)
+                .build();
+    }
+    // This API used for check realtime validation on email register
+    public EmailAvailableResponse emailAvailable(String email) {
+        if (email == null || email.isBlank()) {
+            return EmailAvailableResponse.builder()
+                    .available(false)
+                    .build();
+        }
+
+        boolean available = !userRepository.existsByEmail(email);
+        return EmailAvailableResponse.builder()
                 .available(available)
                 .build();
     }

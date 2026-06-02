@@ -1,8 +1,17 @@
 import { FC, useEffect, useRef, useState } from "react";
 import { Button, DatePicker, Form, Input, Modal, Typography } from "antd";
 import dayjs, { Dayjs } from "dayjs";
-import { checkUsernameAvailable, login, register } from "../services/auth";
+import {
+  checkEmailAvailable,
+  checkUsernameAvailable,
+  login,
+  register,
+} from "../services/auth";
 import { useNotificationStore } from "../stores/useNotificationStore";
+import {
+  CheckStatus,
+  useAvailabilityCheck,
+} from "../hooks/useAvailabilityCheck";
 
 const { Paragraph } = Typography;
 
@@ -27,31 +36,45 @@ interface RegisterFormValues {
   dob?: Dayjs;
 }
 
-type UsernameCheckStatus =
-  | "idle"
-  | "checking"
-  | "available"
-  | "exists"
-  | "error";
-
 const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
   const [form] = Form.useForm<LoginFormValues | RegisterFormValues>();
   const [submitting, setSubmitting] = useState(false);
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [usernameCheckStatus, setUsernameCheckStatus] =
-    useState<UsernameCheckStatus>("idle");
-  const [usernameCheckMessage, setUsernameCheckMessage] = useState<
-    string | null
-  >(null);
+
   const addNotification = useNotificationStore(
     (state) => state.addNotification,
   );
+
+  // State to track whether we're in login or register mode
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+
   const usernameValue = Form.useWatch("username", form);
-  const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastCheckedRef = useRef<string>("");
+  const emailValue = Form.useWatch("email", form);
+  const usernameCheck = useAvailabilityCheck(
+    usernameValue,
+    isRegisterMode,
+    checkUsernameAvailable,
+    {
+      checkingMessage: "Checking username...",
+      availableMessage: "Username is available",
+      existsMessage: "Username already exists",
+      errorMessage: "Could not verify username",
+    },
+  );
+
+  const emailCheck = useAvailabilityCheck(
+    emailValue,
+    isRegisterMode,
+    checkEmailAvailable,
+    {
+      checkingMessage: "Checking email...",
+      availableMessage: "Email is available",
+      existsMessage: "Email already exists",
+      errorMessage: "Could not verify email",
+    },
+  );
 
   const STATUS_MAP: Record<
-    UsernameCheckStatus,
+    CheckStatus,
     "validating" | "error" | "success" | "warning" | undefined
   > = {
     idle: undefined,
@@ -61,76 +84,10 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
     error: "warning",
   };
 
-  const usernameValidateStatus = isRegisterMode
-    ? STATUS_MAP[usernameCheckStatus]
-    : undefined;
-  const usernameHelp = isRegisterMode
-    ? (usernameCheckMessage ?? undefined)
-    : undefined;
-
-  const resetUsernameCheck = () => {
-    setUsernameCheckStatus("idle");
-    setUsernameCheckMessage(null);
-  };
-
-  useEffect(() => {
-    if (checkTimeoutRef.current) {
-      clearTimeout(checkTimeoutRef.current);
-      checkTimeoutRef.current = null;
-    }
-
-    if (!isRegisterMode) {
-      resetUsernameCheck();
-      lastCheckedRef.current = "";
-      return;
-    }
-
-    const username =
-      typeof usernameValue === "string" ? usernameValue.trim() : "";
-
-    if (username.length < 3) {
-      resetUsernameCheck();
-      lastCheckedRef.current = username;
-      return;
-    }
-
-    setUsernameCheckStatus("checking");
-    setUsernameCheckMessage("Checking username...");
-
-    checkTimeoutRef.current = setTimeout(() => {
-      const currentUsername = username;
-      lastCheckedRef.current = currentUsername;
-
-      checkUsernameAvailable(currentUsername)
-        .then((result) => {
-          if (lastCheckedRef.current !== currentUsername) {
-            return;
-          }
-
-          if (!result.available) {
-            setUsernameCheckStatus("exists");
-            setUsernameCheckMessage("Username already exists");
-          } else {
-            setUsernameCheckStatus("available");
-            setUsernameCheckMessage("Username is available");
-          }
-        })
-        .catch(() => {
-          if (lastCheckedRef.current !== currentUsername) {
-            return;
-          }
-
-          setUsernameCheckStatus("error");
-          setUsernameCheckMessage("Could not verify username");
-        });
-    }, 400);
-
-    return () => {
-      if (checkTimeoutRef.current) {
-        clearTimeout(checkTimeoutRef.current);
-      }
-    };
-  }, [isRegisterMode, usernameValue]);
+  const usernameValidateStatus = STATUS_MAP[usernameCheck.status];
+  const usernameHelp = usernameCheck.message;
+  const emailValidateStatus = STATUS_MAP[emailCheck.status];
+  const emailHelp = emailCheck.message;
 
   const handleLogin = async (values: LoginFormValues) => {
     setSubmitting(true);
@@ -175,7 +132,8 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
       });
       form.resetFields();
       setIsRegisterMode(false);
-      resetUsernameCheck();
+      usernameCheck.reset();
+      emailCheck.reset();
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Register failed";
@@ -201,14 +159,16 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
   const handleClose = () => {
     form.resetFields();
     setIsRegisterMode(false);
-    resetUsernameCheck();
+    usernameCheck.reset();
+    emailCheck.reset();
     onClose();
   };
 
   const handleSwitchMode = (nextIsRegisterMode: boolean) => {
     form.resetFields();
     setIsRegisterMode(nextIsRegisterMode);
-    resetUsernameCheck();
+    usernameCheck.reset();
+    emailCheck.reset();
   };
 
   return (
@@ -218,7 +178,6 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
         title={isRegisterMode ? "Register" : "Sign In"}
         onCancel={handleClose}
         footer={null}
-        destroyOnClose
       >
         <Paragraph type="secondary" style={{ marginBottom: 24 }}>
           {isRegisterMode
@@ -248,7 +207,7 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
                     return Promise.resolve();
                   }
 
-                  if (usernameCheckStatus === "exists") {
+                  if (usernameCheck.status === "exists") {
                     return Promise.reject(new Error("Username already exists"));
                   }
 
@@ -278,7 +237,10 @@ const LoginModal: FC<LoginModalProps> = ({ open, onClose, onSuccess }) => {
             <>
               <Form.Item
                 name="email"
+                validateStatus={emailValidateStatus}
+                help={emailHelp}
                 label="Email"
+                hasFeedback={isRegisterMode}
                 rules={[
                   { required: true, message: "Please enter your email" },
                   { type: "email", message: "Please enter a valid email" },

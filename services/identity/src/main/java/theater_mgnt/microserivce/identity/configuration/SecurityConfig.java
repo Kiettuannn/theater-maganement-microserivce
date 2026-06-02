@@ -23,7 +23,8 @@ public class SecurityConfig {
     };
 
     private final String[] PUBLIC_GET_ENDPOINTS ={
-        "/users/exists",
+        "users/username/available",
+        "users/email/available"
     };
 
     @Autowired

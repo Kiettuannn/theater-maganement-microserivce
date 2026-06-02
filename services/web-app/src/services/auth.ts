@@ -86,9 +86,19 @@ export const register = async (payload: RegisterPayload) => {
 
 export const checkUsernameAvailable = async (username: string) => {
   return handleApiResponse<UsernameAvailableResponse>(
-    httpClient.get(API.CHECK_USERNAME, {
+    httpClient.get(API.CHECK_USERNAME_AVAILABLE, {
       params: {
         username: username,
+      },
+    })
+  );
+};
+
+export const checkEmailAvailable = async (email: string) => {
+  return handleApiResponse<UsernameAvailableResponse>(
+    httpClient.get(API.CHECK_EMAIL_AVAILABLE, {
+      params: {
+        email: email,
       },
     })
   );
