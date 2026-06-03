@@ -39,10 +39,10 @@ body {
 .app-main {
   flex: 1;
 }
-
+/* 
 .app-shell--authenticated .app-header {
   background: linear-gradient(90deg, #FFFFFF 0%, #E9F2FF 100%);
-}
+} */
 
 a {
   color: var(--primary-color);
@@ -460,7 +460,12 @@ a:hover {
 }
 
 .user-menu:hover .user-menu-dropdown,
-.user-menu:focus-within .user-menu-dropdown {
+/* .user-menu:focus-within .user-menu-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+} */
+.user-menu:hover .user-menu-dropdown {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);

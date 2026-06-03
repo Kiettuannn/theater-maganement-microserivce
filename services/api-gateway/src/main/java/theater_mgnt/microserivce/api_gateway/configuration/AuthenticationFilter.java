@@ -38,6 +38,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     private String[] publicEndpoints = {
             "/identity/auth/.*",
             "/identity/users/registration",
+            "/identity/users/username/available", // Public for check available username when register
+            "/identity/users/email/available" // Public for check available email when register
     };
 
     @Value("${app.api-prefix}")
@@ -67,7 +69,10 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
                 return chain.filter(exchange);
             else
                 return unauthenticated(exchange.getResponse());
-        }).onErrorResume(throwable -> unauthenticated(exchange.getResponse()));
+        }).onErrorResume(throwable ->{
+            log.error("Failed when API call identity", throwable);
+            return unauthenticated(exchange.getResponse());
+        });
     }
     @Override
     public int getOrder() {

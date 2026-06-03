@@ -9,14 +9,31 @@ import {
 } from "../configurations/configuration";
 import { useAuthStore } from "../stores/useAuthStore";
 import { extractCinemaIdFromToken, extractPermissionsFromToken, extractUserIdFromToken, isTokenExpired } from "../utils/jwtUtils";
+import { handleApiResponse } from "../utils/apiResponse";
+
+interface RegisterPayload {
+  username: string;
+  password: string;
+  email: string;
+  firstname?: string;
+  lastname?: string;
+  city?: string;
+  dob?: string;
+}
+
+interface UsernameAvailableResponse {
+  available: boolean;
+}
 
 export const login = async (username: string, password: string) => {
-  const response = await httpClient.post(API.LOGIN, {
-    username: username,
-    password: password,
-  });
+  const result = await handleApiResponse<{ token?: string }>(
+    httpClient.post(API.LOGIN, {
+      username: username,
+      password: password,
+    })
+  );
 
-  const token = response.data?.result?.token;
+  const token = result?.token;
 
   if (token) {
     // Check if token is expired (shouldn't happen right after login, but safe to check)
@@ -40,7 +57,7 @@ export const login = async (username: string, password: string) => {
     useAuthStore.getState().setAuth(token, userId, cinemaId, permissions);
   }
 
-  return response;
+  return result;
 };
 
 export const logOut = () => {
@@ -54,21 +71,36 @@ export const isAuthenticated = () => {
 };
 
 export const forgotPassword = async (username: string) => {
-  const response = await httpClient.post(API.FORGOT_PASSWORD, {
-    username: username,
-  });
-  return response.data;
+  return handleApiResponse<unknown>(
+    httpClient.post(API.FORGOT_PASSWORD, {
+      username: username,
+    })
+  );
 };
 
-export const resetPassword = async (
-  username: string,
-  otpCode: string,
-  newPassword: string
-) => {
-  const response = await httpClient.post(API.RESET_PASSWORD, {
-    username: username,
-    otpCode: otpCode,
-    newPassword: newPassword,
-  });
-  return response.data;
+export const register = async (payload: RegisterPayload) => {
+  return handleApiResponse<unknown>(
+    httpClient.post(API.REGISTER, payload)
+  );
 };
+
+export const checkUsernameAvailable = async (username: string) => {
+  return handleApiResponse<UsernameAvailableResponse>(
+    httpClient.get(API.CHECK_USERNAME_AVAILABLE, {
+      params: {
+        username: username,
+      },
+    })
+  );
+};
+
+export const checkEmailAvailable = async (email: string) => {
+  return handleApiResponse<UsernameAvailableResponse>(
+    httpClient.get(API.CHECK_EMAIL_AVAILABLE, {
+      params: {
+        email: email,
+      },
+    })
+  );
+};
+
