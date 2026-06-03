@@ -83,7 +83,7 @@ public class AuthenticationService {
         PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(10);
 
         var user = userRepository
-                .findByUsername(request.getUsername())
+                .findByUsernameOrEmail(request.getUsername(), request.getUsername()) // Second param is email
                 .orElseThrow(() -> new AppException(ErrorCode.UNAUTHENTICATED));
         boolean authenticated = passwordEncoder.matches(request.getPassword(), user.getPassword());
         if (!authenticated) throw new AppException(ErrorCode.UNAUTHENTICATED);
