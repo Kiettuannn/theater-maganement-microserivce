@@ -1,4 +1,4 @@
-package com.theater_mgnt.microserivce.notification_service;
+package com.theater_mgnt.microserivce.notification;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
