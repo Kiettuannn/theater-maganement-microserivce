@@ -9,7 +9,7 @@
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
     <groupId>theater-mgnt.microserivce</groupId>
-	<artifactId>identity-service</artifactId>
+	<artifactId>identity</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name/>
 	<description/>
