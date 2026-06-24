@@ -14,8 +14,8 @@ import theater_mgnt.microserivce.catalog.room.dto.response.RoomResponse;
 import theater_mgnt.microserivce.catalog.room.entity.Room;
 import theater_mgnt.microserivce.catalog.room.mapper.RoomMapper;
 import theater_mgnt.microserivce.catalog.room.repository.RoomRepository;
-import theater_mgnt.microserivce.catalog.screening.enums.ScreeningStatus;
-import theater_mgnt.microserivce.catalog.screening.repository.ScreeningRepository;
+import theater_mgnt.microserivce.catalog.showtime.enums.ShowtimeStatus;
+import theater_mgnt.microserivce.catalog.showtime.repository.ShowtimeRepository;
 import theater_mgnt.microserivce.catalog.seat.service.SeatService;
 
 import lombok.AccessLevel;
@@ -29,7 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class RoomService {
     RoomRepository roomRepository;
-    ScreeningRepository screeningRepository;
+    ShowtimeRepository showtimeRepository;
     RoomMapper roomMapper;
     SeatService seatService;
 
@@ -38,9 +38,9 @@ public class RoomService {
      * Nếu có → không cho phép thay đổi cấu hình phòng/ghế.
      */
     private void validateRoomNotBusy(String roomId) {
-        boolean isBusy = screeningRepository.existsByRoomIdAndStatusAndStartTimeAfter(
-                roomId, ScreeningStatus.SCHEDULED, LocalDateTime.now());
-        if (isBusy) throw new AppException(ErrorCode.ROOM_HAS_SCHEDULED_SCREENINGS);
+        boolean isBusy = showtimeRepository.existsByRoomIdAndStatusAndStartTimeAfter(
+                roomId, ShowtimeStatus.SCHEDULED, LocalDateTime.now());
+        if (isBusy) throw new AppException(ErrorCode.ROOM_HAS_SCHEDULED_SHOWTIMES);
     }
 
     @Transactional

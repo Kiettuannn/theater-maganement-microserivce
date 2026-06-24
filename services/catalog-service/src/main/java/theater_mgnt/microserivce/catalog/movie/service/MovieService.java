@@ -27,8 +27,8 @@ import theater_mgnt.microserivce.catalog.movie.mapper.MovieMapper;
 import theater_mgnt.microserivce.catalog.movie.repository.AgeRatingRepository;
 import theater_mgnt.microserivce.catalog.movie.repository.GenreRepository;
 import theater_mgnt.microserivce.catalog.movie.repository.MovieRepository;
-import theater_mgnt.microserivce.catalog.screening.enums.ScreeningStatus;
-import theater_mgnt.microserivce.catalog.screening.repository.ScreeningRepository;
+import theater_mgnt.microserivce.catalog.showtime.enums.ShowtimeStatus;
+import theater_mgnt.microserivce.catalog.showtime.repository.ShowtimeRepository;
 
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -47,7 +47,7 @@ public class MovieService {
     AgeRatingRepository ageRatingRepository;
     GenreRepository genreRepository;
     MovieMapper movieMapper;
-    ScreeningRepository screeningRepository;
+    ShowtimeRepository showtimeRepository;
 
     @Transactional
     public MovieResponse createMovie(CreateMovieRequest request) {
@@ -142,7 +142,7 @@ public class MovieService {
         Movie movie = movieRepository.findById(id).orElseThrow(() -> new AppException(ErrorCode.MOVIE_NOT_EXISTED));
 
         if (request.getStatus() == MovieStatus.archived
-                && screeningRepository.existsByMovieIdAndStatus(id, ScreeningStatus.SCHEDULED)) {
+                && showtimeRepository.existsByMovieIdAndStatus(id, ShowtimeStatus.SCHEDULED)) {
             throw new AppException(ErrorCode.MOVIE_HAS_SCHEDULED_SCREENINGS);
         }
         // Update basic fields using MapStruct
@@ -184,7 +184,7 @@ public class MovieService {
     public MovieResponse archiveMovie(String id) {
         Movie movie = movieRepository.findById(id).orElseThrow(() -> new AppException(ErrorCode.MOVIE_NOT_EXISTED));
 
-        if (screeningRepository.existsByMovieIdAndStatus(id, ScreeningStatus.SCHEDULED)) {
+        if (showtimeRepository.existsByMovieIdAndStatus(id, ShowtimeStatus.SCHEDULED)) {
             throw new AppException(ErrorCode.MOVIE_HAS_SCHEDULED_SCREENINGS);
         }
 
@@ -202,7 +202,7 @@ public class MovieService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime sevenDaysLater = now.plusDays(7);
 
-        return !screeningRepository.existsByMovieIdAndStartTimeBetween(movie.getId(), now, sevenDaysLater);
+        return !showtimeRepository.existsByMovieIdAndStartTimeBetween(movie.getId(), now, sevenDaysLater);
     }
 
     // ========== DELETE ==========
@@ -213,7 +213,7 @@ public class MovieService {
                 movieRepository.findById(movieId).orElseThrow(() -> new AppException(ErrorCode.MOVIE_NOT_EXISTED));
 
         // Không cho xóa phim nếu còn suất chiếu SCHEDULED trong tương lai
-        if (screeningRepository.existsByMovieIdAndStatus(movieId, ScreeningStatus.SCHEDULED)) {
+        if (showtimeRepository.existsByMovieIdAndStatus(movieId, ShowtimeStatus.SCHEDULED)) {
             throw new AppException(ErrorCode.MOVIE_HAS_SCHEDULED_SCREENINGS);
         }
 
