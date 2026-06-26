@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome to Cifastar HCM</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 5px; }
+        .header { background-color: #f8f9fa; padding: 15px; text-align: center; border-bottom: 2px solid #0056b3; }
+        .content { padding: 20px 0; }
+        .credentials { background-color: #f1f3f5; padding: 15px; border-radius: 4px; margin: 15px 0; font-family: monospace; }
+        .button { display: inline-block; padding: 10px 20px; background-color: #0056b3; color: white; text-decoration: none; border-radius: 4px; }
+        .footer { font-size: 12px; color: #777; text-align: center; border-top: 1px solid #eee; padding-top: 15px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h2 th:text="'Welcome to ' + ${appName}">Welcome to Cifastar HCM</h2>
+    </div>
+    
+    <div class="content">
+        <p>Dear <strong th:text="${name}">Customer</strong>,</p>
+        
+        <p>Thank you for registering at Cifastar HCM. We're excited to have you on board!</p>
+        
+        <p>Here are your temporary login credentials. We strongly recommend changing your password after your first login.</p>
+        
+        <div class="credentials">
+            <strong>Username:</strong> <span th:text="${username}">email@example.com</span><br/>
+            <strong>Password:</strong> <span th:text="${password}">temp-password</span>
+        </div>
+        
+        <p style="text-align: center; margin-top: 30px;">
+            <a th:href="${loginUrl}" class="button">Login Now</a>
+        </p>
+    </div>
+    
+    <div class="footer">
+        <p th:text="${companyName} + ' - ' + ${companyAddress}">Cifastar - Address</p>
+        <p>© <span th:text="${year}">2026</span> Cifastar HCM. All rights reserved.</p>
+    </div>
+</div>
+</body>
+</html>

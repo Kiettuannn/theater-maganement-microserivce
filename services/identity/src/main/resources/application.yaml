@@ -16,6 +16,13 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.type.mapping: NotificationEvent:theater_mgnt.microserivce.identity.dto.event.NotificationEvent
 
     properties:
       hibernate:

@@ -23,6 +23,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.HashSet;
 import java.util.List;
@@ -38,7 +39,7 @@ public class UserService {
     UserMapper userMapper;
 //    ProfileClient profileClient;
     ProfileMapper profileMapper;
-//    KafkaTemplate<String, Object> kafkaTemplate;
+    KafkaTemplate<String, Object> kafkaTemplate;
 
     ///  CREATE A USER
     public UserResponse createUser(UserCreationRequest request) {
@@ -53,15 +54,15 @@ public class UserService {
 
         user = userRepository.save(user);
 
-//        NotificationEvent notificationEvent = NotificationEvent.builder()
-//                .channel("EMAIL")
-//                .recipient(request.getEmail())
-//                .subject("Register Successfully, Welcome to MacroxSirvest")
-//                .body("Hello " + request.getUsername())
-//                .build();
-//
-//        // Send email Kafka
-//        kafkaTemplate.send("notification-delivery",notificationEvent);
+        theater_mgnt.microserivce.identity.dto.event.NotificationEvent notificationEvent = theater_mgnt.microserivce.identity.dto.event.NotificationEvent.builder()
+                .channel("EMAIL")
+                .recipient(request.getEmail())
+                .subject("Register Successfully, Welcome to MacroxSirvest")
+                .body("Hello " + request.getUsername())
+                .build();
+
+        // Send email Kafka
+        kafkaTemplate.send("notification-delivery",notificationEvent);
 
         var profileRequest = profileMapper.toProfileCreationRequest(request);
         profileRequest.setUserId(user.getId());
