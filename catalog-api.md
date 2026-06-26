@@ -1,13 +1,14 @@
 ﻿# Catalog Service API
 
-> **Base URL:** `http://localhost:8082/catalog`
+> **Base URL (qua Gateway):** `http://localhost:8888/api/catalog`
+> **Base URL (truc tiep):** `http://localhost:8082/catalog`
 > **Content-Type:** `application/json`
 
 ---
 
-## Movies — `/movies`
+## Movies — `/api/catalog/movies`
 
-### `POST /movies` — Tạo phim mới
+### `POST /api/catalog/movies` — Tao phim moi
 ```json
 {
   "title": "Avengers: Endgame",
@@ -24,49 +25,50 @@
   "cast": "Robert Downey Jr."
 }
 ```
-### `GET /movies` — Lay tat ca phim
-### `GET /movies/{id}` — Lay chi tiet phim theo ID
-### `GET /movies/slug/{slug}` — Lay phim theo slug
-### `GET /movies/status/{status}` — Loc phim theo trang thai (NOW_SHOWING | COMING_SOON | ENDED | ARCHIVED)
-### `GET /movies/now-showing` — Phim dang chieu
-### `GET /movies/coming-soon` — Phim sap chieu
-### `GET /movies/search?title={title}` — Tim phim theo ten
-### `GET /movies/genre/{genreId}` — Lay phim theo the loai
-### `PUT /movies/{id}` — Cap nhat thong tin phim (body giong POST)
-### `PATCH /movies/{id}/archive` — Luu tru phim (status ARCHIVED)
-### `DELETE /movies/{id}` — Xoa phim
+### `GET /api/catalog/movies` — Lay tat ca phim (danh sach rut gon)
+### `GET /api/catalog/movies/{id}` — Lay chi tiet phim theo ID
+### `GET /api/catalog/movies/slug/{slug}` — Lay phim theo slug
+### `GET /api/catalog/movies/status/{status}` — Loc phim theo trang thai
+> `status`: `NOW_SHOWING` | `COMING_SOON` | `ENDED` | `ARCHIVED`
+### `GET /api/catalog/movies/now-showing` — Phim dang chieu
+### `GET /api/catalog/movies/coming-soon` — Phim sap chieu
+### `GET /api/catalog/movies/search?title={title}` — Tim phim theo ten
+### `GET /api/catalog/movies/genre/{genreId}` — Lay phim theo the loai
+### `PUT /api/catalog/movies/{id}` — Cap nhat thong tin phim (body giong POST)
+### `PATCH /api/catalog/movies/{id}/archive` — Luu tru phim (status ARCHIVED)
+### `DELETE /api/catalog/movies/{id}` — Xoa phim
 
 ---
 
-## Genres — `/genres`
+## Genres — `/api/catalog/genres`
 
-### `POST /genres` — Tao the loai phim
+### `POST /api/catalog/genres` — Tao the loai phim
 ```json
 { "name": "Action" }
 ```
-### `GET /genres` — Lay tat ca the loai
-### `GET /genres/{id}` — Lay the loai theo ID
-### `GET /genres/name/{name}` — Lay the loai theo ten
+### `GET /api/catalog/genres` — Lay tat ca the loai
+### `GET /api/catalog/genres/{id}` — Lay the loai theo ID
+### `GET /api/catalog/genres/name/{name}` — Lay the loai theo ten
 
 ---
 
-## Age Ratings — `/age-ratings`
+## Age Ratings — `/api/catalog/age-ratings`
 
-### `POST /age-ratings` — Tao nhan phan loai tuoi
+### `POST /api/catalog/age-ratings` — Tao nhan phan loai tuoi
 ```json
 {
   "code": "T13",
   "description": "Phim danh cho khan gia tu 13 tuoi tro len"
 }
 ```
-### `GET /age-ratings` — Lay tat ca nhan phan loai
-### `GET /age-ratings/{id}` — Lay nhan theo ID
+### `GET /api/catalog/age-ratings` — Lay tat ca nhan phan loai
+### `GET /api/catalog/age-ratings/{id}` — Lay nhan theo ID
 
 ---
 
-## Rooms — `/rooms`
+## Rooms — `/api/catalog/rooms`
 
-### `POST /rooms` — Tao phong chieu
+### `POST /api/catalog/rooms` — Tao phong chieu
 ```json
 {
   "name": "Phong Chieu 1",
@@ -74,9 +76,9 @@
   "screenType": "2D"
 }
 ```
-### `GET /rooms` — Lay tat ca phong chieu
-### `GET /rooms/{roomId}` — Lay chi tiet phong chieu
-### `PUT /rooms/{roomId}` — Cap nhat phong chieu
+### `GET /api/catalog/rooms` — Lay tat ca phong chieu
+### `GET /api/catalog/rooms/{roomId}` — Lay chi tiet phong chieu
+### `PUT /api/catalog/rooms/{roomId}` — Cap nhat phong chieu
 ```json
 {
   "name": "Phong Chieu 1 (Updated)",
@@ -84,24 +86,24 @@
   "screenType": "3D"
 }
 ```
-### `DELETE /rooms/{roomId}` — Xoa phong chieu
+### `DELETE /api/catalog/rooms/{roomId}` — Xoa phong chieu
 
 ---
 
-## Seat Types — `/seat-types`
+## Seat Types — `/api/catalog/seat-types`
 
-### `POST /seat-types` — Tao loai ghe
+### `POST /api/catalog/seat-types` — Tao loai ghe
 ```json
 { "name": "Standard", "description": "Ghe thuong" }
 ```
-### `GET /seat-types` — Lay tat ca loai ghe
-### `GET /seat-types/{id}` — Lay loai ghe theo ID
+### `GET /api/catalog/seat-types` — Lay tat ca loai ghe
+### `GET /api/catalog/seat-types/{id}` — Lay loai ghe theo ID
 
 ---
 
-## Price Config — `/price-configs`
+## Price Config — `/api/catalog/price-configs`
 
-### `POST /price-configs` — Tao cau hinh gia cho loai ghe trong phong
+### `POST /api/catalog/price-configs` — Tao cau hinh gia cho loai ghe trong phong
 ```json
 {
   "roomId": "<roomId>",
@@ -109,19 +111,19 @@
   "price": 75000
 }
 ```
-### `GET /price-configs` — Lay tat ca cau hinh gia
-### `GET /price-configs/{id}` — Lay cau hinh gia theo ID
-### `PUT /price-configs/{id}` — Cap nhat gia
+### `GET /api/catalog/price-configs` — Lay tat ca cau hinh gia
+### `GET /api/catalog/price-configs/{id}` — Lay cau hinh gia theo ID
+### `PUT /api/catalog/price-configs/{id}` — Cap nhat gia
 ```json
 { "price": 90000 }
 ```
-### `DELETE /price-configs/{id}` — Xoa cau hinh gia
+### `DELETE /api/catalog/price-configs/{id}` — Xoa cau hinh gia
 
 ---
 
-## Showtimes — `/showtimes`
+## Showtimes — `/api/catalog/showtimes`
 
-### `POST /showtimes` — Tao suat chieu
+### `POST /api/catalog/showtimes` — Tao suat chieu
 ```json
 {
   "movieId": "<movieId>",
@@ -132,25 +134,25 @@
 ```
 > Khong duoc overlap voi suat chieu cung phong. startTime phai trong tuong lai.
 
-### `GET /showtimes` — Lay tat ca suat chieu
-### `GET /showtimes/{showtimeId}` — Lay suat chieu theo ID
-### `GET /showtimes/{showtimeId}/detail` — Lay chi tiet suat chieu (kem phong, phim)
-### `GET /showtimes/movie/{movieId}` — Lay suat chieu theo phim
-### `GET /showtimes/room/{roomId}` — Lay suat chieu theo phong
-### `PUT /showtimes/{showtimeId}` — Cap nhat thoi gian chieu
+### `GET /api/catalog/showtimes` — Lay tat ca suat chieu
+### `GET /api/catalog/showtimes/{showtimeId}` — Lay suat chieu theo ID
+### `GET /api/catalog/showtimes/{showtimeId}/detail` — Lay chi tiet suat chieu (kem phong, phim)
+### `GET /api/catalog/showtimes/movie/{movieId}` — Lay suat chieu theo phim
+### `GET /api/catalog/showtimes/room/{roomId}` — Lay suat chieu theo phong
+### `PUT /api/catalog/showtimes/{showtimeId}` — Cap nhat thoi gian chieu
 ```json
 {
   "startTime": "2026-07-02T15:00:00",
   "endTime": "2026-07-02T18:00:00"
 }
 ```
-### `DELETE /showtimes/{showtimeId}` — Xoa suat chieu
+### `DELETE /api/catalog/showtimes/{showtimeId}` — Xoa suat chieu
 
 ---
 
-## Combos — `/combos`
+## Combos — `/api/catalog/combos`
 
-### `POST /combos` — Tao combo bap nuoc
+### `POST /api/catalog/combos` — Tao combo bap nuoc
 ```json
 {
   "name": "Combo Doi",
@@ -160,9 +162,9 @@
   "isActive": true
 }
 ```
-### `GET /combos` — Lay tat ca combo
-### `GET /combos/{comboId}` — Lay combo theo ID
-### `PUT /combos/{comboId}` — Cap nhat combo
+### `GET /api/catalog/combos` — Lay tat ca combo
+### `GET /api/catalog/combos/{comboId}` — Lay combo theo ID
+### `PUT /api/catalog/combos/{comboId}` — Cap nhat combo
 ```json
 {
   "name": "Combo Doi (Updated)",
@@ -171,4 +173,4 @@
   "isActive": true
 }
 ```
-### `DELETE /combos/{comboId}` — Xoa combo
+### `DELETE /api/catalog/combos/{comboId}` — Xoa combo

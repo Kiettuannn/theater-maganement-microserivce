@@ -19,4 +19,23 @@ spring:
               filters:
                   - StripPrefix=1
 
+            - id: catalog_service
+              uri: http://localhost:8082
+              predicates:
+                - Path=${app.api-prefix}/catalog/**
+              filters:
+                  - StripPrefix=1
 
+            - id: booking_service
+              uri: http://localhost:8083
+              predicates:
+                - Path=${app.api-prefix}/booking/**
+              filters:
+                  - StripPrefix=1
+
+            - id: payment_service
+              uri: http://localhost:8085
+              predicates:
+                - Path=${app.api-prefix}/payment/**
+              filters:
+                  - StripPrefix=1
