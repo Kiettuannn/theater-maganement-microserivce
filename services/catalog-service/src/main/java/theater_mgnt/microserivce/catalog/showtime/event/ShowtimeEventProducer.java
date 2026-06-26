@@ -13,6 +13,7 @@ import theater_mgnt.microserivce.catalog.seat.entity.Seat;
 import theater_mgnt.microserivce.catalog.seat.repository.SeatRepository;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -33,56 +34,63 @@ public class ShowtimeEventProducer {
         TimeSlot timeSlot = TimeSlot.from(showtime.getStartTime().toLocalTime());
 
         // Build price map: seatTypeId -> price (with fallback to basePriceModifier per spec §4.2)
-        Map<String, BigDecimal> priceCache = seats.stream()
+        // NOTE: Collectors.toMap() does NOT allow null values (throws NPE).
+        // Use HashMap with manual put() to support null (= no PriceConfig found → use basePriceModifier fallback).
+        List<String> distinctSeatTypeIds = seats.stream()
                 .map(s -> s.getSeatType().getId())
                 .distinct()
-                .collect(Collectors.toMap(
-                        id -> id,
-                        id -> priceConfigRepository
-                                .findBySeatTypeIdAndDayTypeAndTimeSlot(id, dayType, timeSlot)
-                                .map(PriceConfig::getPrice)
-                                .orElse(null) // null means we use basePriceModifier fallback below
-                ));
+                .collect(Collectors.toList());
+
+        Map<String, BigDecimal> priceCache = new HashMap<>();
+        for (String seatTypeId : distinctSeatTypeIds) {
+            BigDecimal price = priceConfigRepository
+                    .findBySeatTypeIdAndDayTypeAndTimeSlot(seatTypeId, dayType, timeSlot)
+                    .map(PriceConfig::getPrice)
+                    .orElse(null); // null → caller falls back to basePriceModifier
+            priceCache.put(seatTypeId, price);
+        }
 
         List<Map<String, Object>> seatEvents = seats.stream()
                 .map(seat -> {
                     BigDecimal configPrice = priceCache.get(seat.getSeatType().getId());
-                    // Fix #5: fallback to basePriceModifier, not ZERO
+                    // Fallback to basePriceModifier when no PriceConfig found
                     BigDecimal price = (configPrice != null)
                             ? configPrice
                             : seat.getSeatType().getBasePriceModifier();
+                    // Field names MUST match ShowtimeCreatedEvent.SeatInfoEvent in Booking Service:
+                    // seatId, rowLabel, seatNumber, seatType, price
                     return Map.<String, Object>of(
-                            "seatId",       seat.getId(),
-                            "seatName",     seat.getRowChair() + seat.getSeatNumber(),
-                            "seatTypeId",   seat.getSeatType().getId(),
-                            "seatTypeName", seat.getSeatType().getTypeName(),
-                            "price",        price
+                            "seatId",     seat.getId(),
+                            "rowLabel",   seat.getRowChair(),   // Booking SeatInfoEvent.rowLabel
+                            "seatNumber", seat.getSeatNumber(),
+                            "seatType",   seat.getSeatType().getTypeName(), // Booking SeatInfoEvent.seatType
+                            "price",      price
                     );
                 })
                 .toList();
 
+        // startTime/endTime as ISO-8601 string compatible with Instant.parse() in Booking Consumer
+        // LocalDateTime.toString() = "2026-06-28T14:00" — Instant.parse() expects "2026-06-28T14:00:00Z"
+        // Use toInstant(ZoneOffset.UTC) to produce a proper Instant string
         Map<String, Object> event = Map.of(
                 "showtimeId", showtime.getId(),
                 "roomId",     showtime.getRoom().getId(),
                 "movieId",    showtime.getMovie().getId(),
                 "movieTitle", showtime.getMovie().getTitle(),
-                "startTime",  showtime.getStartTime().toString(),
-                "endTime",    showtime.getEndTime().toString(),
-                "dayType",    dayType.name(),
-                "timeSlot",   timeSlot.name(),
+                "startTime",  showtime.getStartTime().atZone(java.time.ZoneId.systemDefault()).toInstant().toString(),
+                "endTime",    showtime.getEndTime().atZone(java.time.ZoneId.systemDefault()).toInstant().toString(),
                 "seats",      seatEvents
         );
 
         // Note: Kafka topic name intentionally kept as-is (skipped per #2)
-        kafkaTemplate.send("catalog.screening.created", showtime.getId(), event);
-        log.info("Published screening.created for showtime {} with {} seats (dayType={}, timeSlot={})",
+        kafkaTemplate.send("cinema.catalog.showtime-created", showtime.getId(), event);
+        log.info("Published showtime-created for showtime {} with {} seats (dayType={}, timeSlot={})",
                 showtime.getId(), seatEvents.size(), dayType, timeSlot);
     }
 
     public void publishShowtimeCancelled(Showtime showtime) {
-        // Note: Kafka topic name intentionally kept as-is (skipped per #4)
-        kafkaTemplate.send("catalog.screening.cancelled", showtime.getId(),
-                Map.of("screeningId", showtime.getId(), "reason", "DELETED"));
-        log.info("Published screening.cancelled for showtime {}", showtime.getId());
+        kafkaTemplate.send("cinema.catalog.showtime-cancelled", showtime.getId(),
+                Map.of("showtimeId", showtime.getId(), "reason", "DELETED"));
+        log.info("Published showtime-cancelled for showtime {}", showtime.getId());
     }
 }

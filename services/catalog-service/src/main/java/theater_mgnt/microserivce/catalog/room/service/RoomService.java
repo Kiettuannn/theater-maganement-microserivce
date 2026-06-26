@@ -57,7 +57,7 @@ public class RoomService {
             seatService.syncSeats(room, request.getSeats());
         }
 
-        return roomMapper.toRoomResponse(savedRoom);
+        return roomMapper.toRoomResponseWithSeats(savedRoom);
     }
 
     @Transactional
