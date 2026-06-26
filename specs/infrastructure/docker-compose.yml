@@ -1,0 +1,289 @@
+version: "3.9"
+
+# Cinema Management System — Infrastructure
+# Microservice development environment
+# Usage: docker compose --env-file .env up -d
+
+networks:
+  cinema-network:
+    driver: bridge
+
+volumes:
+  mysql-identity-data:
+  pg-catalog-data:
+  pg-booking-data:
+  pg-payment-data:
+  pg-notification-data:
+  pg-analytics-data:
+  redis-data:
+  kafka-data:
+  zookeeper-data:
+  zookeeper-logs:
+
+# ─────────────────────────────────────────────
+# ZOOKEEPER (Kafka dependency)
+# ─────────────────────────────────────────────
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: cinema-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─────────────────────────────────────────────
+# KAFKA
+# ─────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: cinema-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168          # 7 days
+      KAFKA_LOG_RETENTION_BYTES: -1           # no size limit
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+      - "29092:29092"    # accessible from host for local dev tools (e.g. Offset Explorer)
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+# ─────────────────────────────────────────────
+# MYSQL — Identity Service
+# ─────────────────────────────────────────────
+  mysql-identity:
+    image: mysql:8.0
+    container_name: cinema-mysql-identity
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: identitydb
+      MYSQL_USER: ${MYSQL_USER:-identity_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-identity-data:/var/lib/mysql
+    networks:
+      - cinema-network
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─────────────────────────────────────────────
+# POSTGRESQL — Catalog Service (port 5432)
+# ─────────────────────────────────────────────
+  postgres-catalog:
+    image: postgres:17.5
+    container_name: cinema-postgres-catalog
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: catalog_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-catalog-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d catalog_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─────────────────────────────────────────────
+# POSTGRESQL — Booking Service (port 5433)
+# ─────────────────────────────────────────────
+  postgres-booking:
+    image: postgres:17.5
+    container_name: cinema-postgres-booking
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: booking_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg-booking-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d booking_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─────────────────────────────────────────────
+# POSTGRESQL — Payment Service (port 5434)
+# ─────────────────────────────────────────────
+  postgres-payment:
+    image: postgres:17.5
+    container_name: cinema-postgres-payment
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: payment_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - pg-payment-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d payment_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─────────────────────────────────────────────
+# POSTGRESQL — Notification Service (port 5435)
+# ─────────────────────────────────────────────
+  postgres-notification:
+    image: postgres:17.5
+    container_name: cinema-postgres-notification
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: notification_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - pg-notification-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d notification_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─────────────────────────────────────────────
+# POSTGRESQL — Analytics Service (port 5436)
+# ─────────────────────────────────────────────
+  postgres-analytics:
+    image: postgres:17.5
+    container_name: cinema-postgres-analytics
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: analytics_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - pg-analytics-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d analytics_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─────────────────────────────────────────────
+# REDIS — Shared (Catalog cache + Booking seat locks)
+# ─────────────────────────────────────────────
+  redis:
+    image: redis:7.4-alpine
+    container_name: cinema-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─────────────────────────────────────────────
+# EUREKA SERVER
+# Build from: services/eureka-server (Spring Boot app)
+# ─────────────────────────────────────────────
+  eureka-server:
+    build:
+      context: ../../services/eureka-server     # adjust path to Eureka module
+      dockerfile: Dockerfile
+    container_name: cinema-eureka
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8761
+    ports:
+      - "8761:8761"
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8761/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+# ─────────────────────────────────────────────
+# KAFKA UI (optional dev tool — comment out in prod)
+# ─────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: cinema-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: cinema-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8090:8080"
+    networks:
+      - cinema-network
+    profiles:
+      - dev          # only starts with: docker compose --profile dev up
