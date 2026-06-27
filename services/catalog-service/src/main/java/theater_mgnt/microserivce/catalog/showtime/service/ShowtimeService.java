@@ -74,25 +74,25 @@ public class ShowtimeService {
     }
 
     public List<ShowtimeResponse> getShowtimesByRoomId(String roomId) {
-        return showtimeRepository.findByRoomId(roomId).stream()
+        return showtimeRepository.findByRoomIdWithAssociations(roomId).stream()
                 .map(showtimeMapper::toShowtimeResponse)
                 .toList();
     }
 
     public List<ShowtimeResponse> getShowtimesByMovieId(String movieId) {
-        return showtimeRepository.findByMovieId(movieId).stream()
+        return showtimeRepository.findByMovieIdWithAssociations(movieId).stream()
                 .map(showtimeMapper::toShowtimeResponse)
                 .toList();
     }
 
     public List<ShowtimeResponse> getShowtimes() {
-        return showtimeRepository.findAll().stream()
+        return showtimeRepository.findAllWithAssociations().stream()
                 .map(showtimeMapper::toShowtimeResponse)
                 .toList();
     }
 
     public ShowtimeResponse getShowtime(String showtimeId) {
-        Showtime showtime = showtimeRepository.findById(showtimeId)
+        Showtime showtime = showtimeRepository.findByIdWithAssociations(showtimeId)
                 .orElseThrow(() -> new AppException(ErrorCode.SHOWTIME_NOT_EXISTED));
         return showtimeMapper.toShowtimeResponse(showtime);
     }

@@ -1,23 +1,26 @@
 # Booking Service — Specification
 
-> **Source**: Direct code read on 2026-06-21.
+> **Source**: Direct code read on 2026-06-21. Updated 2026-06-25 to align with target DDL.
 > **Port**: 8083
-> **Database**: PostgreSQL (per-service schema) + Redis
-> **Message Broker**: Kafka (consume `ScreeningCreated`, `ScreeningCancelled`, `PaymentConfirmed`, `PaymentFailed`; publish `BookingCreated`, `BookingCancelled`, `TicketIssued`, `LoyaltyPointsEarned`)
+> **Database**: PostgreSQL 15 (Supabase) | Partitioning by showtime_date | Optimistic locking
+> **Cache**: Redis
+> **Message Broker**: Kafka (consume `ShowtimeCreated`, `ShowtimeCancelled`, `PaymentConfirmed`, `PaymentFailed`; publish `BookingCreated`, `BookingCancelled`, `BookingConfirmed`, `TicketIssued`, `LoyaltyPointsEarned`)
 
 ---
 
 ## 1. Service Overview
 
 The Booking Service is the central transactional hub of the cinema system. It manages:
-- **SeatReservation**: Persistent status (`AVAILABLE`/`LOCKED`/`BOOKED`) + ephemeral Redis lock (10-min TTL)
-- **Booking**: Full lifecycle from `PENDING` → `PAID`/`CANCELLED`/`REFUNDED`
+- **SeatReservation**: Persistent status (`AVAILABLE`/`LOCKED`/`RESERVED`/`CONFIRMED`/`CANCELLED`) + ephemeral Redis lock (8-min TTL)
+- **Booking**: Full lifecycle from `INITIATED` → `CONFIRMED`/`COMPLETED`/`CANCELLED`/`FAILED`
 - **BookingCombo**: F&B items attached to a booking (denormalized price snapshot from Catalog Service)
 - **Ticket**: One ticket per seat per booking; issued after payment confirmed
+- **BookingOutbox**: Transactional outbox for reliable at-least-once Kafka event delivery
+- **BookingIdempotencyKey**: Prevents duplicate booking requests from retries
 
 > **Combo and ComboItem catalog** are owned by **Catalog Service** (see `catalog-service-spec.md §6.10–6.11`). Booking Service calls `GET /combos/{comboId}` on Catalog Service via REST to validate availability and snapshot the price into `BookingCombo`.
 
-**Key design principle**: Booking Service holds **no live FK references** to Catalog Service tables. All catalog data (movieTitle, roomName, screeningId, seatId, seatName, seatTypeName, price) is **snapshotted** either from the `ScreeningCreated` Kafka event or at booking creation time.
+**Key design principle**: Booking Service holds **no live FK references** to Catalog Service tables. All catalog data (movieTitle, hallName, showtimeId, seatId, seatName, seatTypeName, price) is **snapshotted** either from the `ShowtimeCreated` Kafka event or at booking creation time.
 
 ---
 
@@ -26,17 +29,21 @@ The Booking Service is the central transactional hub of the cinema system. It ma
 ### 2.1 Entity Graph
 
 ```
-ScreeningCreated (Kafka)
+ShowtimeCreated (Kafka)
         │
         ▼
-SeatReservation [N per screening]
-        │ (1 per BOOKED seat)
+SeatReservation [N per showtime]
+        │ (1 per CONFIRMED seat)
         ▼
-Booking ──── Customer ──── (Identity Service cross-domain ref)
+Booking ──── User ──── (Identity Service cross-domain ref)
    │
    ├──── BookingCombo [N] ──── comboId (cross-domain ref → Catalog Service)
    │
-   └──── Ticket [1 per seat] ──── SeatReservation
+   ├──── Ticket [1 per seat]
+   │
+   ├──── BookingOutbox [N] ──── Transactional Outbox
+   │
+   └──── BookingIdempotencyKey [1] ──── idempotency_key
 ```
 
 ---
@@ -45,85 +52,81 @@ Booking ──── Customer ──── (Identity Service cross-domain ref)
 
 ---
 
-#### SeatReservation (NEW — replaces `ScreeningSeat`)
+#### SeatReservation (replaces monolith `ScreeningSeat`)
 
 **Target table**: `seat_reservations`
 
-This entity does **not exist** in the monolith. It is created by consuming `ScreeningCreated` Kafka events and fully replaces the monolith's `ScreeningSeat` entity.
+> **Design**: `seat_reservations` are created **per booking** (not pre-created from `ShowtimeCreated` events). `booking_id` is `NOT NULL`, meaning each seat reservation is immediately linked to a parent booking. Status defaults to `'LOCKED'` on creation. Seat expiry is managed via `bookings.expires_at` (not a separate `lock_expires_at` column).
 
-| Field | Java Type | Column | Constraints | Description |
-|-------|-----------|--------|-------------|-------------|
-| `id` | `UUID` | `id` | PK, `@GeneratedValue(UUID)` | |
-| `screeningId` | `String` | `screening_id` | NOT NULL, `@Index` | Snapshot from `ScreeningCreated` event; no FK to Catalog DB |
-| `seatId` | `String` | `seat_id` | NOT NULL | Snapshot from `ScreeningCreated` event |
-| `seatName` | `String` | `seat_name` | NOT NULL | e.g. `"A5"` — denormalized; from event payload |
-| `seatTypeId` | `String` | `seat_type_id` | NOT NULL | Snapshot from event |
-| `seatTypeName` | `String` | `seat_type_name` | NOT NULL | e.g. `"VIP"` — denormalized |
-| `price` | `BigDecimal` | `price` | NOT NULL, `precision=10, scale=2` | **Immutable snapshot** from screening creation; never recalculated |
-| `status` | `SeatReservationStatus` | `status` | NOT NULL | `AVAILABLE` / `LOCKED` / `BOOKED` |
-| `bookingId` | `UUID` | `booking_id` | nullable, no FK constraint (event-sourced) | Set when seat is locked; `null` if AVAILABLE |
-| `lockExpiresAt` | `Instant` | `lock_expires_at` | nullable | Set when `LOCKED`; `null` when `AVAILABLE` or `BOOKED` |
-| `createdAt` | `Instant` | `created_at` | NOT NULL | When the record was created (screening creation time) |
+| Field | Column (DDL) | Type | Constraints | Description |
+|-------|-------------|------|-------------|-------------|
+| `id` | `id` | `UUID` | PK DEFAULT gen_random_uuid() | |
+| `bookingId` | `booking_id` | `UUID` | NOT NULL REFERENCES bookings(id) ON DELETE CASCADE | FK to parent booking; row deleted when booking deleted |
+| `showtimeId` | `showtime_id` | `UUID` | NOT NULL | Routing key; mirrors `bookings.showtime_id` |
+| `seatId` | `seat_id` | `UUID` | NOT NULL | Cross-domain ref to Catalog/Hall Service seat (no FK constraint) |
+| `rowLabel` | `row_label` | `VARCHAR(4)` | NOT NULL | e.g. `"A"`, `"B"` |
+| `seatNumber` | `seat_number` | `SMALLINT` | NOT NULL | e.g. `1`, `5` |
+| `seatType` | `seat_type` | `VARCHAR(32)` | NOT NULL | `STANDARD`, `PREMIUM`, or `VIP` |
+| `price` | `price` | `NUMERIC(10,2)` | NOT NULL | **Immutable snapshot** from showtime pricing; never recalculated |
+| `status` | `status` | `seat_status` enum | NOT NULL DEFAULT `'LOCKED'` | `AVAILABLE` / `LOCKED` / `RESERVED` / `CONFIRMED` / `CANCELLED` |
+| `redisLockKey` | `redis_lock_key` | `VARCHAR(255)` | nullable | Mirror of the Redis key stored for audit/debugging |
+| `lockedAt` | `locked_at` | `TIMESTAMPTZ` | nullable | When the seat was locked |
+| `confirmedAt` | `confirmed_at` | `TIMESTAMPTZ` | nullable | Set when booking transitions to `CONFIRMED` |
+| `releasedAt` | `released_at` | `TIMESTAMPTZ` | nullable | When seat was released back to `AVAILABLE` |
+| `createdAt` | `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT NOW() | Record creation time |
 
-**Unique constraint**: `UNIQUE (screening_id, seat_id)` — only one reservation per seat per screening.
+**Unique constraint (partial)**: `UNIQUE (showtime_id, seat_id) WHERE status NOT IN ('CANCELLED')` — prevents double-booking of the same seat across non-cancelled reservations for the same showtime.
 
-**Index**: `INDEX idx_seat_res_screening (screening_id)` — all seat availability queries filter by `screeningId`.
+**Indexes**:
+- `ux_seat_res_showtime_seat ON seat_reservations(showtime_id, seat_id) WHERE status NOT IN ('CANCELLED')` (UNIQUE)
+- `ix_seat_res_booking_id ON seat_reservations(booking_id)`
+- `ix_seat_res_showtime_status ON seat_reservations(showtime_id, status)`
 
-> **Mapping from mono**: `ScreeningSeat` → `SeatReservation`. The monolith's `ScreeningSeat.booking` (String, nullable) → `bookingId (UUID, nullable)`. `ScreeningSeat.status` `AVAILABLE/LOCKED/SOLD` → `SeatReservationStatus` `AVAILABLE/LOCKED/BOOKED` (renamed `SOLD` → `BOOKED` for clarity).
+> **Migration from monolith `ScreeningSeat`**: `seatName` → `row_label` + `seat_number`. `seatTypeId`/`seatTypeName` → `seat_type VARCHAR(32)`. `lockUntil` removed — expiry now on `bookings.expires_at`. `booking` (String, nullable) → `booking_id (UUID, NOT NULL)`. `screening_id` → `showtime_id`. Status `SOLD` renamed to `CONFIRMED`.
 
 ---
 
-#### Booking (Monolith → Microservice)
+#### Booking
 
-**Package**: `booking.entity.Booking`
 **Table**: `bookings`
+**Partition**: `PARTITION BY RANGE (showtime_date)` — partitioned by showtime date for query performance and data archival.
 
-> **Note**: Unlike most catalog entities, `Booking` does **not** extend `BaseEntity`. It has its own `id` (UUID), `createdAt`, `expiredAt` fields.
+> **Key schema changes from monolith**: `customer_id` → `user_id` (UUID from JWT); `screening_id` → `showtime_id`; `expired_at` → `expires_at` (8-min hold); `subtotal`/`discount` removed — `total_amount` is the single source of truth. Added `hall_id`, `cinema_id`, `idempotency_key`, `payment_ref`, `version` (optimistic lock), `currency`, `updated_at`. Status renamed: `PENDING` → `INITIATED`, `PAID` → `CONFIRMED`/`COMPLETED`, `EXPIRED`/`REFUNDED` → `FAILED`/`CANCELLED`.
 
-| Field | Java Type | Column | Constraints | Description |
-|-------|-----------|--------|-------------|-------------|
-| `id` | `UUID` | `id` | PK, `@GeneratedValue(UUID)` | |
-| `customer` | `Customer` | `customer_id` | nullable FK → `customers.id` | Null for guest bookings (walk-in at counter) |
-| `screening` | `Screening` | `screening_id` | NOT NULL FK | **Cross-domain reference** — must be replaced with `screeningId: String` in microservice |
-| `status` | `BookingStatus` | `status` | NOT NULL | See state machine below |
-| `subtotal` | `BigDecimal` | `subtotal` | | Seat prices + combo prices before discount |
-| `discount` | `BigDecimal` | `discount` | | Loyalty points redeemed, converted to VND |
-| `totalAmount` | `BigDecimal` | `total_amount` | | `subtotal - discount` |
-| `createdAt` | `Instant` | `created_at` | | Booking creation time |
-| `expiredAt` | `Instant` | `expired_at` | | `createdAt + 10 minutes` — seat hold expiry |
+| Field | Column (DDL) | Type | Constraints | Description |
+|-------|-------------|------|-------------|-------------|
+| `id` | `id` | `UUID` | PK DEFAULT gen_random_uuid() | |
+| `userId` | `user_id` | `UUID` | NOT NULL, `ix_bookings_user_id` | Identity Service user; resolved from JWT `sub` claim |
+| `showtimeId` | `showtime_id` | `UUID` | NOT NULL, `ix_bookings_showtime_id` | Which showtime is being booked |
+| `cinemaId` | `cinema_id` | `UUID` | NOT NULL, `ix_bookings_cinema_id` | Partition/routing key for Kafka even partitioning |
+| `hallId` | `hall_id` | `UUID` | NOT NULL | Hall (screen room) within the cinema |
+| `showtimeDate` | `showtime_date` | `DATE` | NOT NULL | **Partition column** — used for `PARTITION BY RANGE (showtime_date)` |
+| `status` | `status` | `booking_status` enum | NOT NULL DEFAULT `'INITIATED'` | See state machine §5.1 |
+| `totalAmount` | `total_amount` | `NUMERIC(10,2)` | NOT NULL CHECK `>= 0` | Net payable amount (seats + combos − discounts) |
+| `currency` | `currency` | `CHAR(3)` | NOT NULL DEFAULT `'SGD'` | ISO 4217 currency code |
+| `idempotencyKey` | `idempotency_key` | `UUID` | NOT NULL, `ux_bookings_idempotency` | Client-supplied per booking attempt; prevents duplicate bookings |
+| `paymentRef` | `payment_ref` | `UUID` | nullable | `payment_id` echoed from Payment Service on confirmation |
+| `expiresAt` | `expires_at` | `TIMESTAMPTZ` | NOT NULL | Seat-hold expiry (`created_at + 8 minutes`) |
+| `confirmedAt` | `confirmed_at` | `TIMESTAMPTZ` | nullable | When payment was confirmed |
+| `cancelledAt` | `cancelled_at` | `TIMESTAMPTZ` | nullable | When booking was cancelled |
+| `cancellationReason` | `cancellation_reason` | `TEXT` | nullable | Free-text cancellation reason |
+| `version` | `version` | `BIGINT` | NOT NULL DEFAULT `0` | **Optimistic locking** — incremented on every UPDATE |
+| `createdAt` | `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT NOW() | |
+| `updatedAt` | `updated_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT NOW() | Auto-updated on every write |
 
-**Derived field (display only)**:
+**Indexes**:
+- `ux_bookings_idempotency ON bookings(idempotency_key)` (UNIQUE)
+- `ix_bookings_user_id ON bookings(user_id)`
+- `ix_bookings_showtime_id ON bookings(showtime_id)`
+- `ix_bookings_cinema_id ON bookings(cinema_id)`
+- `ix_bookings_status ON bookings(status) WHERE status NOT IN ('COMPLETED','CANCELLED')`
+- `ix_bookings_expires_at ON bookings(expires_at) WHERE status = 'INITIATED'`
+
+**Derived field (application-level, not stored in DB)**:
 ```java
 bookingCode = "BK-" + id.toString().substring(0, 8).toUpperCase()
 // Example: "BK-3FA85F64"
 ```
-
-**In microservice**: Replace `Screening screening` (@ManyToOne cross-domain) with:
-```java
-String screeningId;
-String movieTitle;    // denormalized
-String roomName;      // denormalized
-String cinemaId;      // denormalized
-String cinemaName;    // denormalized
-LocalDateTime startTime; // denormalized (for display)
-```
-
----
-
-#### ScreeningSeat (Monolith transitional — becomes SeatReservation)
-
-**Package**: `screeningSeat.entity.ScreeningSeat`
-**Table**: `screeningSeats`
-
-| Field | Mono Type | New Equivalent in `seat_reservations` | Notes |
-|-------|-----------|--------------------------------------|-------|
-| `id` | `String` | `id` (UUID) | |
-| `screening` | `@ManyToOne Screening` | `screeningId: String` | Denormalized string, no FK |
-| `seat` | `@ManyToOne Seat` | `seatId: String` | Denormalized, no FK |
-| `booking` | `String` | `bookingId: UUID` | Was raw String; now typed UUID |
-| `status` | `ScreeningSeatStatus` (AVAILABLE/LOCKED/SOLD) | `SeatReservationStatus` (AVAILABLE/LOCKED/BOOKED) | `SOLD` renamed to `BOOKED` |
-| `lockUntil` | `Instant` | `lockExpiresAt: Instant` | Renamed |
-| *(not present)* | — | `seatName`, `seatTypeId`, `seatTypeName`, `price` | NEW — from `ScreeningCreated` event |
 
 ---
 
@@ -140,12 +143,55 @@ LocalDateTime startTime; // denormalized (for display)
 | `bookingId` | `String` | `booking_id` | NOT NULL | FK → `bookings.id` |
 | `comboId` | `String` | `combo_id` | NOT NULL | Cross-domain ref → Catalog Service `combos.id` (no FK constraint) |
 | `comboName` | `String` | `combo_name` | NOT NULL | **Snapshot** of `combo.name` at order time |
-| `quantity` | `Integer` | `quantity` | | How many units ordered |
-| `remain` | `Integer` | `remain` | | Remaining units (decremented at check-in) |
+| `quantity` | `Integer` | `quantity` | NOT NULL | How many units ordered |
+| `remain` | `Integer` | `remain` | NOT NULL | Remaining units (decremented at check-in) |
 | `unitPrice` | `BigDecimal` | `unit_price` | NOT NULL | **Snapshot** of `combo.price` at order time |
 | `subtotal` | `BigDecimal` | `subtotal` | NOT NULL | `unitPrice × quantity` |
 
 > **Design note**: `comboName` and `unitPrice` are snapshots. If the combo price or name changes later, the existing booking is unaffected. `remain` tracks partial combo redemption during check-in.
+
+---
+
+#### BookingOutbox
+
+**Table**: `booking_outbox`
+
+> **Transactional Outbox pattern**: Instead of publishing Kafka events directly (which can fail silently if the broker is down), the service writes an outbox record **within the same DB transaction** as the business operation. A separate relay process reads `PENDING` outbox records and publishes them to Kafka, then marks them `PUBLISHED`. This guarantees at-least-once delivery without distributed transactions.
+
+| Field | Column (DDL) | Type | Constraints | Description |
+|-------|-------------|------|-------------|-------------|
+| `id` | `id` | `UUID` | PK DEFAULT gen_random_uuid() | |
+| `aggregateType` | `aggregate_type` | `VARCHAR(64)` | NOT NULL | Domain aggregate — e.g. `Booking` |
+| `aggregateId` | `aggregate_id` | `UUID` | NOT NULL | ID of the aggregate that raised the event |
+| `eventType` | `event_type` | `VARCHAR(128)` | NOT NULL | e.g. `booking.confirmed` |
+| `payload` | `payload` | `JSONB` | NOT NULL | Full event payload |
+| `kafkaTopic` | `kafka_topic` | `VARCHAR(255)` | NOT NULL | Target Kafka topic |
+| `partitionKey` | `partition_key` | `VARCHAR(64)` | NOT NULL | `cinema_id` for even partitioning across brokers |
+| `status` | `status` | `VARCHAR(16)` | NOT NULL DEFAULT `'PENDING'` | `PENDING` → `PUBLISHED` or `FAILED` |
+| `attemptCount` | `attempt_count` | `SMALLINT` | NOT NULL DEFAULT `0` | Number of publish attempts (for retry backoff) |
+| `publishedAt` | `published_at` | `TIMESTAMPTZ` | nullable | Timestamp when successfully published to Kafka |
+| `createdAt` | `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT NOW() | |
+
+**Index**: `ix_outbox_status_created ON booking_outbox(status, created_at) WHERE status = 'PENDING'`
+
+---
+
+#### BookingIdempotencyKey
+
+**Table**: `booking_idempotency_keys`
+
+> **Idempotency**: Protects against duplicate booking requests caused by network retries. The client supplies an `idempotency_key` (UUID) per request attempt. The service checks this table before processing; if a matching key exists, it returns the cached response instead of reprocessing. Records expire after 24 hours.
+
+| Field | Column (DDL) | Type | Constraints | Description |
+|-------|-------------|------|-------------|-------------|
+| `idempotencyKey` | `idempotency_key` | `UUID` | PRIMARY KEY | Client-supplied unique key per request attempt |
+| `bookingId` | `booking_id` | `UUID` | NOT NULL REFERENCES bookings(id) | The booking created for this request |
+| `userId` | `user_id` | `UUID` | NOT NULL | The user who made the request |
+| `requestHash` | `request_hash` | `VARCHAR(64)` | NOT NULL | SHA-256 hash of the request body; detects changed payloads |
+| `responseStatus` | `response_status` | `SMALLINT` | NOT NULL | HTTP status code of the original response |
+| `responseBody` | `response_body` | `JSONB` | nullable | Cached response body to replay on duplicate request |
+| `createdAt` | `created_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT NOW() | |
+| `expiresAt` | `expires_at` | `TIMESTAMPTZ` | NOT NULL DEFAULT NOW() + INTERVAL '24 hours' | TTL — cleaned up by scheduler after expiry |
 
 ---
 
@@ -157,61 +203,162 @@ LocalDateTime startTime; // denormalized (for display)
 | Field | Java Type | Column | Constraints | Description |
 |-------|-----------|--------|-------------|-------------|
 | `id` | `UUID` | `id` | PK, `@GeneratedValue(UUID)` | |
-| `booking` | `Booking` | `booking_id` | NOT NULL, FK, `@Index idx_ticket_booking` | |
-| `screeningSeat` | `ScreeningSeat` | `screening_seat_id` | NOT NULL, FK, UNIQUE | In microservice: replace with `seatReservationId: UUID` |
-| `seatName` | `String` | `seat_name` | VARCHAR(10) | Denormalized: `rowChair + seatNumber` |
-| `price` | `BigDecimal` | `price` | NOT NULL, `precision=10, scale=2` | Copied from `ScreeningSeat` price at ticket creation |
+| `bookingId` | `UUID` | `booking_id` | NOT NULL, FK, `@Index idx_ticket_booking` | |
+| `seatReservationId` | `UUID` | `seat_reservation_id` | NOT NULL, FK, UNIQUE | References `seat_reservations.id` (replaces monolith `screeningSeat`) |
+| `seatName` | `String` | `seat_name` | VARCHAR(10) | Denormalized: `rowLabel + seatNumber` (e.g. `"A1"`) |
+| `price` | `BigDecimal` | `price` | NOT NULL, `precision=10, scale=2` | Copied from `SeatReservation.price` at ticket creation |
 | `ticketCode` | `String` | `ticket_code` | NOT NULL, UNIQUE, VARCHAR(50), `@Index` | `"TK-" + UUID(8 chars uppercase)` |
 | `qrContent` | `String` | `qr_content` | NOT NULL, TEXT | JSON string (see format below) |
 | `status` | `TicketStatus` | `status` | NOT NULL, `@Index idx_ticket_status` | Default: `ACTIVE` |
 | `usedAt` | `Instant` | `used_at` | nullable | Set on check-in |
-| `expiresAt` | `Instant` | `expires_at` | NOT NULL | = `screening.endTime` (Asia/Ho_Chi_Minh zone) |
+| `expiresAt` | `Instant` | `expires_at` | NOT NULL | = `showtime.endTime` (Asia/Ho_Chi_Minh zone) |
 | `createdAt` | `Instant` | `created_at` | NOT NULL, `@CreationTimestamp` | |
 
 ---
 
-## 3. SeatReservation Design
+## 3. Database DDL
 
-### 3.1 Status Transition Diagram
+### 3.1 Full Schema (PostgreSQL 15 / Supabase)
+
+```sql
+-- ─────────────────────────────────────────────────────────────────────────────
+-- BOOKING SERVICE DATABASE SCHEMA
+-- PostgreSQL 15 (Supabase) | Partitioning by showtime_date | Optimistic locking
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ── Enum Types ──────────────────────────────────────────────────────────────
+CREATE TYPE seat_status AS ENUM ('AVAILABLE','LOCKED','RESERVED','CONFIRMED','CANCELLED');
+CREATE TYPE booking_status AS ENUM
+('INITIATED','CONFIRMED','PAYMENT_PENDING','COMPLETED','CANCELLED','FAILED');
+
+-- ── bookings (RANGE-partitioned by showtime_date) ───────────────────────────
+CREATE TABLE bookings (
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id              UUID NOT NULL,
+    showtime_id          UUID NOT NULL,
+    cinema_id            UUID NOT NULL,            -- partition/routing key
+    hall_id              UUID NOT NULL,
+    showtime_date        DATE NOT NULL,            -- partition column
+    status               booking_status NOT NULL DEFAULT 'INITIATED',
+    total_amount         NUMERIC(10,2) NOT NULL CHECK (total_amount >= 0),
+    currency             CHAR(3) NOT NULL DEFAULT 'SGD',
+    idempotency_key      UUID NOT NULL,            -- client-supplied per attempt
+    payment_ref          UUID,                     -- payment_id from Payment svc
+    expires_at           TIMESTAMPTZ NOT NULL,     -- lock expiry (now + 8 min)
+    confirmed_at         TIMESTAMPTZ,
+    cancelled_at         TIMESTAMPTZ,
+    cancellation_reason  TEXT,
+    version              BIGINT NOT NULL DEFAULT 0, -- optimistic lock
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+) PARTITION BY RANGE (showtime_date);
+
+-- Partitions managed manually or via pg_partman (future)
+
+-- ── seat_reservations ───────────────────────────────────────────────────────
+CREATE TABLE seat_reservations (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    booking_id       UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+    showtime_id      UUID NOT NULL,
+    seat_id          UUID NOT NULL,
+    row_label        VARCHAR(4) NOT NULL,
+    seat_number      SMALLINT NOT NULL,
+    seat_type        VARCHAR(32) NOT NULL,  -- STANDARD, PREMIUM, VIP
+    price            NUMERIC(10,2) NOT NULL,
+    status           seat_status NOT NULL DEFAULT 'LOCKED',
+    redis_lock_key   VARCHAR(255),          -- mirror of Redis key for audit
+    locked_at        TIMESTAMPTZ,
+    confirmed_at     TIMESTAMPTZ,
+    released_at      TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ── booking_outbox (Transactional Outbox pattern) ───────────────────────────
+CREATE TABLE booking_outbox (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    aggregate_type   VARCHAR(64) NOT NULL,    -- e.g. Booking
+    aggregate_id     UUID NOT NULL,
+    event_type       VARCHAR(128) NOT NULL,   -- e.g. booking.confirmed
+    payload          JSONB NOT NULL,
+    kafka_topic      VARCHAR(255) NOT NULL,
+    partition_key    VARCHAR(64) NOT NULL,    -- cinema_id for even partitioning
+    status           VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+    attempt_count    SMALLINT NOT NULL DEFAULT 0,
+    published_at     TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ── booking_idempotency_keys ─────────────────────────────────────────────────
+CREATE TABLE booking_idempotency_keys (
+    idempotency_key  UUID PRIMARY KEY,
+    booking_id       UUID NOT NULL REFERENCES bookings(id),
+    user_id          UUID NOT NULL,
+    request_hash     VARCHAR(64) NOT NULL,
+    response_status  SMALLINT NOT NULL,
+    response_body    JSONB,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at       TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '24 hours'
+);
+
+-- ── INDEXES ──────────────────────────────────────────────────────────────────
+CREATE UNIQUE INDEX ux_bookings_idempotency ON bookings(idempotency_key);
+CREATE INDEX ix_bookings_user_id ON bookings(user_id);
+CREATE INDEX ix_bookings_showtime_id ON bookings(showtime_id);
+CREATE INDEX ix_bookings_cinema_id ON bookings(cinema_id);
+CREATE INDEX ix_bookings_status ON bookings(status)
+    WHERE status NOT IN ('COMPLETED','CANCELLED');
+CREATE INDEX ix_bookings_expires_at ON bookings(expires_at)
+    WHERE status = 'INITIATED';
+
+CREATE UNIQUE INDEX ux_seat_res_showtime_seat ON seat_reservations(showtime_id, seat_id)
+    WHERE status NOT IN ('CANCELLED');
+CREATE INDEX ix_seat_res_booking_id ON seat_reservations(booking_id);
+CREATE INDEX ix_seat_res_showtime_status ON seat_reservations(showtime_id, status);
+
+CREATE INDEX ix_outbox_status_created ON booking_outbox(status, created_at)
+    WHERE status = 'PENDING';
+```
+
+---
+
+## 4. SeatReservation Design
+
+### 4.1 Status Transition Diagram
 
 ```
-[Kafka: ScreeningCreated]
+[POST /bookings — createBooking]
          │
          ▼
-     AVAILABLE  ◄────────────────────────────────────────────┐
-         │                                                    │
-   PUT /seat-reservations/{id}/lock                          │
-   (Redis SET seat:lock + status = LOCKED)                  │
-         │                                                    │
-         ▼                                                    │
-      LOCKED ─────────────────────────────────── AVAILABLE   │
-         │    TTL expires (10 min)               (Redis key  │
-         │    OR PaymentFailed event             auto-evicts) │
-         │    OR BookingCancelled event           │           │
-         │                                       │           │
-   PaymentConfirmed event                        └───────────┘
+      LOCKED  ──────────────────────────────── AVAILABLE
+         │    TTL expires (8 min)              (Redis key
+         │    OR PaymentFailed event            auto-evicts)
+         │    OR BookingCancelled              │
+         │                                     │
+   PaymentConfirmed event                      │
+         │                                     │
+         ▼                                     │
+      CONFIRMED ──── BookingCancelled ─────► CANCELLED
          │
-         ▼
-      BOOKED  (terminal — only reversed by refund/cancellation)
+   Booking COMPLETED
          │
-   BookingCancelled after PAID
-         │
-         ▼
-     AVAILABLE  (seats released back; `bookingId = null`, `lockExpiresAt = null`)
+     (terminal)
 ```
 
-### 3.2 Redis Seat Lock
+### 4.2 Redis Seat Lock
 
 | Property | Value |
 |----------|-------|
-| **Key** | `seat:lock:{screeningId}:{seatId}` |
-| **Value** | JSON: `{"customerId": "...", "lockedAt": "ISO-8601"}` |
-| **TTL** | **10 minutes** |
-| **Data type** | Redis `STRING` with EX |
+| **Key** | `seat:lock:{showtimeId}:{seatId}` |
+| **Value** | JSON: `{"userId": "...", "lockedAt": "ISO-8601"}` |
+| **TTL** | **8 minutes** |
+| **Data type** | Redis `STRING` with `EX` |
 
-**Set when**: `PUT /seat-reservations/{id}/lock` (customer selects a seat)
+**Set when**: `POST /bookings` — for each seat in the request
 ```redis
-SET seat:lock:{screeningId}:{seatId} '{"customerId":"...","lockedAt":"..."}' EX 600
+SET seat:lock:{showtimeId}:{seatId} '{"userId":"...","lockedAt":"..."}' EX 480
 ```
 
 **Released when**:
@@ -219,28 +366,28 @@ SET seat:lock:{screeningId}:{seatId} '{"customerId":"...","lockedAt":"..."}' EX 
 - `POST /bookings/{id}/cancel` (explicit unlock)
 - `PaymentFailed` Kafka event received (release all seats in booking)
 
-**Ownership check**: On `PUT /seat-reservations/{id}/lock`, verify the Redis key is not already set by a different customer. If set → `SEAT_ALREADY_LOCKED`.
+**Ownership check**: On booking creation, verify the Redis key is not already set by a different user. If set → `SEAT_ALREADY_LOCKED`.
 
-> **⚠️ Current monolith implementation**: The monolith does **not use Redis** for seat locking. It uses an atomic SQL `UPDATE` to set `status = LOCKED` and `lockUntil = now + 10 min` via `screeningSeatRepository.lockSeats(ids, expiredAt)`. The Redis layer must be added in the microservice.
+> **⚠️ Monolith note**: The monolith does **not use Redis** for seat locking. It uses an atomic SQL `UPDATE` to set `status = LOCKED` and `lockUntil = now + 10 min`. The Redis layer is entirely new work for the microservice.
 
-### 3.3 Seat Locking in Monolith (Actual Code)
+### 4.3 Seat Locking (Monolith Reference)
 
 The monolith's lock mechanism uses a custom `@Query`:
 
 ```java
-// ScreeningSeatRepository
+// SeatReservationRepository (replaces monolith ScreeningSeatRepository)
 @Modifying
-@Query("UPDATE ScreeningSeat s SET s.status = 'LOCKED', s.lockUntil = :expiredAt " +
+@Query("UPDATE SeatReservation s SET s.status = 'LOCKED', s.lockUntil = :expiresAt " +
        "WHERE s.id IN :ids AND s.status = 'AVAILABLE' AND " +
        "(s.lockUntil IS NULL OR s.lockUntil < CURRENT_TIMESTAMP)")
-int lockSeats(@Param("ids") List<String> ids, @Param("expiredAt") Instant expiredAt);
+int lockSeats(@Param("ids") List<String> ids, @Param("expiresAt") Instant expiresAt);
 ```
 
-The return value (updated row count) is compared to the requested count — if they differ, some seats were already locked → `SCREENING_SEATS_NOT_AVAILABLE`.
+The return value (updated row count) is compared to the requested count — if they differ, some seats were already locked → `SHOWTIME_SEATS_NOT_AVAILABLE`.
 
-### 3.4 Orphan Seat Validation
+### 4.4 Orphan Seat Validation
 
-`BookingServiceImpl.validateScreeningSeat()` enforces a cinema UX rule: **you cannot leave a single isolated available seat between occupied/selected seats in a row**.
+`BookingServiceImpl.validateSeatReservation()` enforces a cinema UX rule: **you cannot leave a single isolated available seat between occupied/selected seats in a row**.
 
 The algorithm:
 1. Groups seats by row
@@ -251,59 +398,57 @@ The algorithm:
 
 ---
 
-## 4. Booking Lifecycle
+## 5. Booking Lifecycle
 
-### 4.1 BookingStatus State Machine
+### 5.1 BookingStatus State Machine
 
 | Status | Meaning |
 |--------|---------|
-| `PENDING` | Booking created; seats are `LOCKED`; awaiting payment; expires in 10 min |
-| ~~`CONFIRM`~~ | **[DEPRECATED — not used in microservice flow]** Defined in monolith enum but never set in any service method. Booking goes `PENDING → PAID` directly on `PaymentConfirmed`. Remove when creating the microservice `BookingStatus` enum. |
-| `PAID` | Payment confirmed; seats are `BOOKED`; tickets issued |
-| `EXPIRED` | Set by background scheduler when `expiredAt` passes and status is still `PENDING`; seats released |
-| `CANCELLED` | Manually cancelled by customer (only from `PENDING`); seats released |
-| `REFUNDED` | Cancelled after payment (from `PAID`); seats released; loyalty points reversed |
+| `INITIATED` | Booking created; seats are `LOCKED`; awaiting payment; expires in 8 min |
+| `PAYMENT_PENDING` | Payment initiated at Payment Service; awaiting confirmation |
+| `CONFIRMED` | Payment confirmed; seats are `CONFIRMED`; tickets issued |
+| `COMPLETED` | Booking fully settled (showtime passed, tickets used) |
+| `CANCELLED` | Cancelled by customer or admin; seats released |
+| `FAILED` | Payment failed or booking expired; seats released |
 
-### 4.2 Transition Table
+### 5.2 Transition Table
 
-| From | To | Trigger | Code Location | Side Effects |
-|------|----|---------|---------------|-------------|
-| *(none)* | `PENDING` | `POST /bookings` | `BookingServiceImpl.createBooking()` | Seats `LOCKED`; `expiredAt = now + 10min` |
-| `PENDING` | `PAID` | `PaymentConfirmed` Kafka event | `BookingServiceImpl.confirmBookingPayment()` | Seats → `BOOKED` (SOLD in mono); Tickets created; Loyalty points added |
-| `PENDING` | `CANCELLED` | `POST /bookings/{id}/cancel` | `BookingServiceImpl.cancelBooking()` | Seats released → `AVAILABLE`; `bookingId = null` |
-| `PENDING` | `EXPIRED` | Background scheduler (not yet implemented in mono) | Future | Seats released → `AVAILABLE` |
-| `PAID` | `REFUNDED` | `BookingCancelled` Kafka event (or admin action) | `BookingServiceImpl.refundBooking()` | Seats released → `AVAILABLE`; Loyalty points reversed |
+| From | To | Trigger | Side Effects |
+|------|----|---------|--------------|
+| *(none)* | `INITIATED` | `POST /bookings` | Seats → `LOCKED`; `expires_at = now + 8min`; outbox + idempotency records written |
+| `INITIATED` | `PAYMENT_PENDING` | Payment initiated | `payment_ref` set |
+| `PAYMENT_PENDING` | `CONFIRMED` | `PaymentConfirmed` Kafka event | Seats → `CONFIRMED`; Tickets created; `LoyaltyPointsEarned` published |
+| `CONFIRMED` | `COMPLETED` | System / scheduler after showtime ends | Final settled state |
+| `INITIATED` | `CANCELLED` | `POST /bookings/{id}/cancel` | Seats → `CANCELLED`; Redis locks cleared |
+| `PAYMENT_PENDING` | `CANCELLED` | `POST /bookings/{id}/cancel` | Seats → `CANCELLED`; Redis locks cleared |
+| `INITIATED` | `FAILED` | TTL expires / `PaymentFailed` event | Seats → `AVAILABLE`; Redis locks cleared |
+| `PAYMENT_PENDING` | `FAILED` | `PaymentFailed` Kafka event | Seats → `AVAILABLE`; Redis locks cleared |
 
-### 4.3 Booking Creation Flow (Detailed)
+### 5.3 Booking Creation Flow (Detailed)
 
 `POST /bookings` → `createBooking(CreateBookingRequest)`:
 
-1. **Validate seat count**: `0 < seatCount ≤ 8` → `BOOKING_EXCEED_SEAT_LIMIT`
-2. **Load screening**: must exist → `SCREENING_NOT_EXISTED`; movie must not be `archived` → `MOVIE_ALREADY_ENDED`
-3. **Validate seat selection**: `validateScreeningSeat()` — checks orphan seat rule
-4. **Atomic seat lock**: `screeningSeatRepository.lockSeats(ids, expiredAt)` — CAS-style UPDATE; if locked count ≠ requested count → `SCREENING_SEATS_NOT_AVAILABLE`
-5. **Resolve customer**: `resolveCustomer(request)` (see below)
-6. **Calculate seat subtotal**: `calculateSeatSubtotal(seats)` — re-queries `PriceConfig` (same algorithm as Catalog)
-7. **Persist booking**: `status = PENDING`, `discount = 0`, `totalAmount = subtotal`, `expiredAt = now + 10min`
-8. **Link seats to booking**: `seat.booking = bookingId.toString()` for each locked seat
-9. **Return**: `CreateBookingResponse { id, expiredAt, subtotal, customerId }`
+1. **Check idempotency**: Look up `idempotency_key` in `booking_idempotency_keys` — if found and `request_hash` matches, return cached response; if `request_hash` differs → `IDEMPOTENCY_KEY_CONFLICT`
+2. **Validate seat count**: `0 < seatCount ≤ 8` → `BOOKING_EXCEED_SEAT_LIMIT`
+3. **Load showtime**: must exist → `SHOWTIME_NOT_EXISTED`
+4. **Validate seat selection**: `validateSeatReservation()` — checks orphan seat rule
+5. **Atomic seat lock**: `seatReservationRepository.lockSeats(ids, expiresAt)` — CAS-style UPDATE; if locked count ≠ requested count → `SHOWTIME_SEATS_NOT_AVAILABLE`
+6. **Resolve user**: from JWT `sub` claim
+7. **Calculate total amount**: `SUM(seatReservation.price)` — uses pre-snapshotted prices; no re-computation against Catalog
+8. **Persist booking**: `status = INITIATED`, `total_amount = sum`, `expires_at = now + 8min`, `version = 0`
+9. **Write outbox record** (same transaction): `BookingCreated` event → `booking_outbox`
+10. **Write idempotency record** (same transaction): → `booking_idempotency_keys`
+11. **Return**: `CreateBookingResponse { id, expiresAt, totalAmount, userId }`
 
-### 4.4 Customer Resolution (`resolveCustomer`)
+### 5.4 User Resolution
 
-| Scenario | Behaviour |
-|----------|-----------|
-| `customerId` provided | Look up existing Customer → `USER_NOT_EXISTED` if not found |
-| No `customerId`, no name/email | Guest booking: `customer = null` |
-| Email matches existing Account | Find or create `Customer` record linked to that account |
-| New email (no account) | Create new `Account` (random 6-char alphanumeric password) + `Customer`; fire `CustomerCreatedEvent` (sends welcome email with temp password) |
-
-Name parsing: If `customerName` is provided but `firstName`/`lastName` are not, splits on whitespace: last word = `firstName`, rest = `lastName`.
+All bookings in the microservice require an authenticated user. `userId` is resolved from JWT `sub` claim. Guest (unauthenticated) bookings are not supported in the microservice design.
 
 ---
 
-## 5. Ticket Design
+## 6. Ticket Design
 
-### 5.1 Ticket Code Format
+### 6.1 Ticket Code Format
 
 ```
 "TK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase()
@@ -313,9 +458,9 @@ Name parsing: If `customerName` is provided but `firstName`/`lastName` are not, 
 
 - Length: **11 characters** (`TK-` + 8 hex chars)
 - Unique: enforced by DB `UNIQUE` constraint on `ticket_code` + loop-retry in `generateUniqueCode()`
-- **Not a UUID** — it is a 8-char hex substring of a UUID, prefixed with `TK-`
+- **Not a UUID** — it is an 8-char hex substring of a UUID, prefixed with `TK-`
 
-### 5.2 QR Content (stored in `qr_content` column)
+### 6.2 QR Content (stored in `qr_content` column)
 
 ```json
 {"type": "TICKET", "ticketCode": "TK-3FA85F64"}
@@ -323,24 +468,22 @@ Name parsing: If `customerName` is provided but `firstName`/`lastName` are not, 
 
 Generated by `QrGenerator.generateQrContent(ticketCode)` using Jackson `ObjectMapper`. This is a **text string** stored in the DB, not an image. The frontend renders it as a QR code image using a JS library.
 
-The `service-boundaries.md` says "QR code removed", but the monolith still stores `qrContent`. The key point is: **no QR image is generated server-side**. The `qrContent` JSON string is the data payload; the frontend generates the actual QR image.
-
-### 5.3 Ticket Creation (when triggered)
+### 6.3 Ticket Creation (when triggered)
 
 `TicketService.createTickets(bookingId)` is called inside `confirmBookingPayment()` (triggered by `PaymentConfirmed` event):
 
-1. Verify `booking.status == PAID`
-2. Load all `ScreeningSeat` records with `booking = bookingId`
-3. Set `expiresAt = screening.endTime` (converted to UTC from `Asia/Ho_Chi_Minh`)
+1. Verify `booking.status == CONFIRMED`
+2. Load all `SeatReservation` records with `booking_id = bookingId`
+3. Set `expiresAt = showtime.endTime` (converted to UTC from `Asia/Ho_Chi_Minh`)
 4. For each seat:
    - Generate unique `ticketCode` (retry until unique)
    - Generate `qrContent` JSON
-   - Copy `price` from `ScreeningSeatService.getScreeningSeat(seat.id).price`
+   - Copy `price` from `SeatReservation.price`
    - Set `status = ACTIVE`
 5. Persist all tickets
-6. Publish `TicketCreatedEvent` (Spring internal event → notification via Brevo email)
+6. Write `TicketIssued` event to `booking_outbox` (same transaction)
 
-### 5.4 Check-in Validation
+### 6.4 Check-in Validation
 
 **Staff-facing endpoint**: `POST /tickets/check-in/{ticketCode}` (requires `ADMIN` or `STAFF` role)
 
@@ -358,31 +501,30 @@ The `service-boundaries.md` says "QR code removed", but the monolith still store
 
 **Customer QR self-check-in** (legacy): `checkInByQr(qrContent)` — parses JSON, extracts `ticketCode`, same validation but without combo processing.
 
-### 5.5 Ticket Status Transitions
+### 6.5 Ticket Status Transitions
 
 ```
 ACTIVE ─── checkInTicket() / checkInByQr() ──► USED
 ACTIVE ─── now > expiresAt ─────────────────► EXPIRED (set lazily on next access or by scheduler)
-ACTIVE ─── markTicketForTransfer() ─────────► FOR_TRANSFER (must be ≥1 hour before screening)
+ACTIVE ─── markTicketForTransfer() ─────────► FOR_TRANSFER (must be ≥1 hour before showtime)
 FOR_TRANSFER ─── cancelTicketTransfer() ────► ACTIVE
 ```
 
 **Ticket Transfer Rules**:
-- Can mark for transfer only if `status == ACTIVE` and `screening.startTime - now >= 1 hour`
+- Can mark for transfer only if `status == ACTIVE` and `showtime.startTime - now >= 1 hour`
 - `FOR_TRANSFER` tickets are visible on the seat map to other customers who can "claim" them
-- No actual transfer mechanism exists yet in code — the mono only marks the status
 
-### 5.6 Ticket Expiry Scheduler
+### 6.6 Ticket Expiry Scheduler
 
-`TicketService.expireTickets()` — scheduled job that batch-sets all `ACTIVE` tickets with `expiresAt < now` to `EXPIRED`. Also `expireTicketsByBookingId(bookingId)` — called on booking refund.
+`TicketService.expireTickets()` — scheduled job that batch-sets all `ACTIVE` tickets with `expiresAt < now` to `EXPIRED`. Also `expireTicketsByBookingId(bookingId)` — called on booking cancellation or failure.
 
 ---
 
-## 6. Combo in Booking Service
+## 7. Combo in Booking Service
 
 > **Catalog data is owned by Catalog Service.** `Combo` and `ComboItem` entities are defined and managed in `catalog-service-spec.md §6.10–6.11`. This section documents only how Booking Service *uses* combos to create `BookingCombo` records.
 
-### 6.1 Cross-Service Call Flow
+### 7.1 Cross-Service Call Flow
 
 When a customer selects combos for a booking, Booking Service calls Catalog Service via **synchronous REST**:
 
@@ -393,25 +535,25 @@ PUT /bookings/{bookingId}/combos
        └→ snapshot { comboId, comboName, price } into BookingCombo
 ```
 
-### 6.2 Booking Combo Flow
+### 7.2 Booking Combo Flow
 
 `PUT /bookings/{bookingId}/combos` — replaces all combo selections for a booking:
 
-1. Verify `booking.status == PENDING` and `expiredAt > now`
-2. Delete all existing `BookingCombo` records for this bookingId
+1. Verify `booking.status == INITIATED` and `expiresAt > now`
+2. Delete all existing `BookingCombo` records for this `bookingId`
 3. For each `ComboItemRequest { comboId, quantity }`:
    - Call `GET /combos/{comboId}` on Catalog Service → throw `COMBO_NOT_EXISTED` if not found or soft-deleted
    - Create `BookingCombo { comboId, comboName, quantity, remain=quantity, unitPrice=combo.price, subtotal=unitPrice×quantity }`
-4. Recalculate `booking.subtotal += newComboSubtotal`; `booking.totalAmount = subtotal - discount`
-5. Return `BookingPricingResponse { subtotal, discount, totalAmount }`
+4. Recalculate `booking.total_amount += newComboSubtotal`
+5. Return `BookingPricingResponse { totalAmount }`
 
 **`remain` field**: Starts equal to `quantity`. Decremented during check-in as staff redeems combo items.
 
 ---
 
-## 7. Loyalty Points
+## 8. Loyalty Points
 
-### 7.1 Earn (on Payment Confirmed)
+### 8.1 Earn (on Payment Confirmed)
 
 ```
 pointsEarned = totalAmount / 20000   (integer division)
@@ -425,9 +567,9 @@ pointsSpent = discount / 1000        (integer division)
 
 Net points added = `pointsEarned - pointsSpent`.
 
-Called by `confirmBookingPayment()` → `customerService.addLoyaltyPoints(customerId, net)`.
+Called by `confirmBookingPayment()` → Publish `LoyaltyPointsEarned` event via outbox to Identity Service.
 
-### 7.2 Redeem (on Booking Pending)
+### 8.2 Redeem (on Booking Initiated)
 
 `POST /bookings/{bookingId}/redeem-points` with `{ pointsToRedeem: N }`:
 
@@ -437,19 +579,19 @@ maxDiscount = totalAmount × 50%      (cannot discount more than 50%)
 ```
 
 Validation:
-- `booking.status == PENDING`
+- `booking.status == INITIATED`
 - `discountAmount ≤ maxDiscount`
-- `N ≤ customer.loyaltyPoints` (fetched from Identity Service sync call)
+- `N ≤ user.loyaltyPoints` (fetched from Identity Service sync REST call)
 
-### 7.3 Reverse (on Refund)
+### 8.3 Reverse (on Cancellation after CONFIRMED)
 
-`refundBooking()` calls `customerService.addLoyaltyPoints(customerId, -(pointsEarned - pointsSpent))` — subtracts the net points that were added at confirmation.
+On booking cancellation after status `CONFIRMED`, publish `LoyaltyPointsReversed` event — subtracts the net points that were added at confirmation.
 
 ---
 
-## 8. API Endpoints
+## 9. API Endpoints
 
-### 8.1 Booking Endpoints
+### 9.1 Booking Endpoints
 
 | Method | Endpoint | Access | Request | Response |
 |--------|----------|--------|---------|----------|
@@ -465,13 +607,11 @@ Validation:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `customerId` | `String` | nullable — UUID of existing Customer |
-| `screeningId` | `String` | Required — which screening to book |
-| `screeningSeatIds` | `List<String>` | IDs of `ScreeningSeat` records (→ `seatReservationId` in microservice); max 8 |
-| `customerName` | `String` | Optional — for guest/new customer (full name, parsed into first+last) |
-| `firstName` | `String` | Optional |
-| `lastName` | `String` | Optional |
-| `email` | `String` | Optional — used for find-or-create customer |
+| `userId` | `String` | Resolved from JWT `sub` claim |
+| `showtimeId` | `String` | Required — which showtime to book |
+| `seatReservationIds` | `List<String>` | IDs of seats to reserve; max 8 |
+| `idempotencyKey` | `UUID` | Required — client-supplied per request attempt |
+| `currency` | `String` | Optional — defaults to `SGD` |
 
 #### `GET /bookings` Query Parameters
 
@@ -497,17 +637,17 @@ Validation:
 }
 ```
 
-### 8.2 Ticket Endpoints
+### 9.2 Ticket Endpoints
 
 | Method | Endpoint | Access | Notes |
 |--------|----------|--------|-------|
 | `GET` | `/tickets/by-booking/{bookingId}` | Auth | List tickets for a booking |
 | `GET` | `/tickets/{ticketCode}` | Auth | Get ticket by code |
 | `GET` | `/tickets/check-in/{ticketCode}` | Auth | Get ticket + combo view for check-in UI |
-| `GET` | `/tickets/my-tickets/{customerId}` | Auth | List tickets for a customer |
+| `GET` | `/tickets/my-tickets/{userId}` | Auth | List tickets for a user |
 | `POST` | `/tickets/check-in/{ticketCode}` | `ADMIN` or `STAFF` | Perform check-in; body contains combo usage |
-| `POST` | `/tickets/{ticketCode}/mark-for-transfer` | Auth | Mark ticket for transfer; `?customerId=...` |
-| `POST` | `/tickets/{ticketCode}/cancel-transfer` | Auth | Cancel transfer; `?customerId=...` |
+| `POST` | `/tickets/{ticketCode}/mark-for-transfer` | Auth | Mark ticket for transfer |
+| `POST` | `/tickets/{ticketCode}/cancel-transfer` | Auth | Cancel transfer |
 
 #### `TicketCheckInRequest`
 
@@ -520,7 +660,7 @@ Validation:
 }
 ```
 
-### 8.3 Combo Endpoints (Booking Service)
+### 9.3 Combo Endpoints (Booking Service)
 
 > Booking Service does **not** expose Combo catalog CRUD. Those endpoints live in Catalog Service (`/combos`, `/combo-items`). The only combo endpoint here is the one that attaches combos to a booking.
 
@@ -528,37 +668,37 @@ Validation:
 |--------|----------|--------|-------|
 | `PUT` | `/bookings/{bookingId}/combos` | Auth | Replace all combo selections for a booking; calls Catalog Service to validate and snapshot |
 
-### 8.4 SeatReservation Endpoints (Target Design)
+### 9.4 SeatReservation Endpoints
 
-> These endpoints do not exist in the monolith. In the monolith, seat listing is via `GET /screeningSeats?screeningId=...`. In the microservice these are the target endpoints.
+> In the monolith, seat listing is via `GET /showtime-seats?showtimeId=...`. In the microservice these are the target endpoints.
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| `GET` | `/seat-reservations/{screeningId}` | Public | Get all seats + status for a screening (seat map) |
-| `PUT` | `/seat-reservations/{id}/lock` | Auth | Lock a seat for current customer |
+| `GET` | `/seat-reservations/{showtimeId}` | Public | Get all seats + status for a showtime (seat map) |
+| `PUT` | `/seat-reservations/{id}/lock` | Auth | Lock a seat for current user |
 | `PUT` | `/seat-reservations/{id}/unlock` | Auth | Release a held seat |
 
 ---
 
-## 9. Kafka Event Contracts
+## 10. Kafka Event Contracts
 
-### 9.1 Events Consumed
+### 10.1 Events Consumed
 
-#### `ScreeningCreated`
-- **Topic**: `cinema.catalog.screening-created`
-- **Action**: Create one `seat_reservation` per seat in the event `seats[]` array with `status = AVAILABLE`, `price = event.seats[i].price`
+#### `ShowtimeCreated`
+- **Topic**: `cinema.catalog.showtime-created`
+- **Action**: Pre-populate `seat_reservations` with `status = AVAILABLE` for each seat in the showtime
 
 ```java
 // Pseudocode consumer
-@KafkaListener(topics = "cinema.catalog.screening-created")
-void onScreeningCreated(ScreeningCreatedEvent event) {
+@KafkaListener(topics = "cinema.catalog.showtime-created")
+void onShowtimeCreated(ShowtimeCreatedEvent event) {
     event.getPayload().getSeats().forEach(seat -> {
         seatReservationRepo.save(SeatReservation.builder()
-            .screeningId(event.getPayload().getScreeningId())
+            .showtimeId(event.getPayload().getShowtimeId())
             .seatId(seat.getSeatId())
-            .seatName(seat.getSeatName())
-            .seatTypeId(seat.getSeatTypeId())
-            .seatTypeName(seat.getSeatTypeName())
+            .rowLabel(seat.getRowLabel())
+            .seatNumber(seat.getSeatNumber())
+            .seatType(seat.getSeatType())
             .price(seat.getPrice())
             .status(SeatReservationStatus.AVAILABLE)
             .build());
@@ -566,36 +706,38 @@ void onScreeningCreated(ScreeningCreatedEvent event) {
 }
 ```
 
-#### `ScreeningCancelled`
-- **Topic**: `cinema.catalog.screening-cancelled`
-- **Action**: Delete or mark all `seat_reservation` records for `screeningId` as cancelled; clear Redis `seat:lock:{screeningId}:*`
+#### `ShowtimeCancelled`
+- **Topic**: `cinema.catalog.showtime-cancelled`
+- **Action**: Mark all `seat_reservations` for `showtimeId` as `CANCELLED`; cancel any `INITIATED`/`PAYMENT_PENDING` bookings for that showtime; clear Redis `seat:lock:{showtimeId}:*`
 
 #### `PaymentConfirmed`
 - **Topic**: `cinema.payment.payment-confirmed`
-- **Payload must include**: `bookingId`, `paymentId`, `paidAt`, `amountPaid`
+- **Payload must include**: `bookingId`, `paymentId`, `confirmedAt`, `amountPaid`
 - **Action** (7-step sequence):
 
 | Step | Action |
 |------|--------|
-| 1 | Receive `PaymentConfirmed` event; idempotency check on `bookingId` (skip if already PAID) |
-| 2 | Set `booking.status = PAID` |
-| 3 | Set `seat_reservation.status = BOOKED` for all reservations in this booking |
+| 1 | Receive `PaymentConfirmed` event; idempotency check on `bookingId` (skip if already `CONFIRMED`) |
+| 2 | Set `booking.status = CONFIRMED`; `booking.payment_ref = paymentId`; `booking.confirmed_at = confirmedAt` |
+| 3 | Set `seat_reservation.status = CONFIRMED` for all reservations in this booking |
 | 4 | Create `Ticket` records via `TicketService.createTickets(bookingId)` |
-| 5 | Publish `TicketIssued` event (topic: `cinema.booking.ticket-issued`) — triggers notification QR email |
-| 6 | Publish `BookingPaid` event (topic: `cinema.booking.booking-paid`) — provides revenue breakdown to Analytics |
-| 7 | Calculate loyalty points (`pointsEarned - pointsSpent`) → Publish `LoyaltyPointsEarned` event |
+| 5 | Write `TicketIssued` event to outbox (topic: `cinema.booking.ticket-issued`) — triggers notification |
+| 6 | Write `BookingConfirmed` event to outbox (topic: `cinema.booking.booking-confirmed`) — Analytics |
+| 7 | Calculate loyalty points → Write `LoyaltyPointsEarned` event to outbox |
 
 #### `PaymentFailed`
 - **Topic**: `cinema.payment.payment-failed`
 - **Payload must include**: `bookingId`
-- **Action**: Release all seats for this booking → `status = AVAILABLE`; clear Redis locks; optionally set booking `status = EXPIRED`
+- **Action**: Set `booking.status = FAILED`; release all `seat_reservations` → `AVAILABLE`; clear Redis locks
 
-### 9.2 Events Published
+### 10.2 Events Published
+
+> All events are written to `booking_outbox` within the business transaction and relayed to Kafka asynchronously.
 
 #### `BookingCreated`
 - **Topic**: `cinema.booking.booking-created`
 - **Trigger**: After `POST /bookings` succeeds
-- **Consumers**: Payment Service (to create invoice), Notification Service (booking confirmation)
+- **Consumers**: Payment Service (to create invoice), Notification Service
 
 ```json
 {
@@ -605,29 +747,25 @@ void onScreeningCreated(ScreeningCreatedEvent event) {
   "payload": {
     "bookingId":    "uuid",
     "bookingCode":  "BK-3FA85F64",
-    "customerId":   "uuid | null",
-    "customerName": "Nguyen Van A",
-    "customerEmail":"customer@email.com",
-    "screeningId":  "uuid",
+    "userId":       "uuid",
+    "showtimeId":   "uuid",
     "movieTitle":   "Avengers: Doomsday",
     "cinemaName":   "Cifastar HCM Q1",
-    "roomName":     "Room 1",
+    "hallName":     "Hall 1",
     "startTime":    "2026-07-01T10:30:00Z",
     "seats": [
       { "seatReservationId": "uuid", "seatName": "A1", "price": 90000.00 }
     ],
-    "subtotal":     270000.00,
-    "discount":     0.00,
     "totalAmount":  270000.00,
-    "expiredAt":    "ISO-8601"
+    "expiresAt":    "ISO-8601"
   }
 }
 ```
 
 #### `BookingCancelled`
 - **Topic**: `cinema.booking.booking-cancelled`
-- **Trigger**: `POST /bookings/{id}/cancel` or refund
-- **Consumers**: Payment Service (trigger refund), Notification Service
+- **Trigger**: `POST /bookings/{id}/cancel` or `PaymentFailed` event
+- **Consumers**: Payment Service (trigger refund if applicable), Notification Service
 
 ```json
 {
@@ -635,8 +773,8 @@ void onScreeningCreated(ScreeningCreatedEvent event) {
   "payload": {
     "bookingId":   "uuid",
     "bookingCode": "BK-3FA85F64",
-    "customerId":  "uuid | null",
-    "reason":      "CUSTOMER_CANCEL | PAYMENT_FAILED | ADMIN",
+    "userId":      "uuid",
+    "reason":      "CUSTOMER_CANCEL | PAYMENT_FAILED | SHOWTIME_CANCELLED | ADMIN",
     "totalAmount": 270000.00
   }
 }
@@ -644,7 +782,7 @@ void onScreeningCreated(ScreeningCreatedEvent event) {
 
 #### `TicketIssued`
 - **Topic**: `cinema.booking.ticket-issued`
-- **Trigger**: After `createTickets()` succeeds (inside `confirmBookingPayment()`)
+- **Trigger**: After `createTickets()` succeeds (Step 5 of `PaymentConfirmed` consumer)
 - **Consumers**: Notification Service (sends ticket email with `ticketCode`)
 
 ```json
@@ -652,17 +790,16 @@ void onScreeningCreated(ScreeningCreatedEvent event) {
   "eventType": "TicketIssued",
   "payload": {
     "bookingId":   "uuid",
-    "customerId":  "uuid",
-    "accountId":   "uuid",
+    "userId":      "uuid",
     "movieTitle":  "Avengers: Doomsday",
     "cinemaName":  "Cifastar HCM Q1",
     "startTime":   "ISO-8601",
     "tickets": [
       {
-        "ticketId":    "uuid",
-        "ticketCode":  "TK-3FA85F64",
-        "seatName":    "A1",
-        "price":       90000.00
+        "ticketId":   "uuid",
+        "ticketCode": "TK-3FA85F64",
+        "seatName":   "A1",
+        "price":      90000.00
       }
     ]
   }
@@ -671,123 +808,129 @@ void onScreeningCreated(ScreeningCreatedEvent event) {
 
 #### `LoyaltyPointsEarned`
 - **Topic**: `cinema.booking.loyalty-points-earned`
-- **Trigger**: After `confirmBookingPayment()` — points calculation done (Step 7 of PaymentConfirmed consumer)
-- **Consumers**: Identity Service (apply `addLoyaltyPoints` to customer)
-- **Note**: In the microservice, `customerService.addLoyaltyPoints()` is replaced by publishing this event. Identity Service consumes it and updates `customer.loyaltyPoints`.
+- **Trigger**: Step 7 of `PaymentConfirmed` consumer
+- **Consumers**: Identity Service (apply `addLoyaltyPoints` to user account)
 
 ```json
 {
   "eventType": "LoyaltyPointsEarned",
   "payload": {
-    "customerId":    "uuid",
-    "bookingId":     "uuid",
-    "pointsEarned":  7,
-    "pointsSpent":   5,
+    "userId":         "uuid",
+    "bookingId":      "uuid",
+    "pointsEarned":   7,
+    "pointsSpent":    5,
     "netPointChange": 2
   }
 }
 ```
 
-#### `BookingPaid`
-- **Topic**: `cinema.booking.booking-paid`
-- **Trigger**: Published after Step 5 (TicketIssued) in the PaymentConfirmed consumer sequence
+#### `BookingConfirmed`
+- **Topic**: `cinema.booking.booking-confirmed`
+- **Trigger**: Step 6 of `PaymentConfirmed` consumer sequence
 - **Consumers**: Analytics Service
-- **Note**: Provides revenue breakdown data (`cinemaId`, `movieId`, `ticketRevenue`, `comboRevenue`, `totalTicketsSold`, `screeningDate`) that Payment Service cannot provide in `PaymentConfirmed`.
+- **Note**: Provides revenue breakdown (`cinemaId`, `movieId`, `ticketRevenue`, `comboRevenue`, `totalTicketsSold`, `showtimeDate`) that Payment Service cannot supply in `PaymentConfirmed`.
 
 ```json
 {
-  "eventType": "BookingPaid",
+  "eventType": "BookingConfirmed",
   "payload": {
     "bookingId":        "uuid",
-    "paymentId":        "uuid — echoed from PaymentConfirmed for Analytics correlation",
-    "paidAt":           "ISO-8601",
-    "customerId":       "uuid | null",
+    "paymentId":        "uuid",
+    "confirmedAt":      "ISO-8601",
+    "userId":           "uuid",
     "movieId":          "uuid",
     "movieTitle":       "Avengers: Doomsday",
     "cinemaId":         "uuid",
     "cinemaName":       "Cifastar HCM Q1",
-    "screeningId":      "uuid",
+    "showtimeId":       "uuid",
     "ticketRevenue":    270000.00,
     "comboRevenue":     75000.00,
     "totalAmount":      345000.00,
-    "discount":         0.00,
     "totalTicketsSold": 3,
-    "screeningDate":    "2026-07-01"
+    "showtimeDate":     "2026-07-01"
   }
 }
 ```
 
 ---
 
-## 10. Data Ownership
+## 11. Data Ownership
 
 **Booking Service owns exclusively:**
 
 | Table | Notes |
 |-------|-------|
-| `seat_reservations` | NEW — created from `ScreeningCreated` events |
-| `bookings` | Core booking record |
+| `bookings` | Core booking record; RANGE-partitioned by `showtime_date` |
+| `seat_reservations` | One row per seat per booking; replaces monolith `ScreeningSeat` |
 | `booking_combos` | Denormalized combo snapshot per booking; FK to `bookings` |
-| `tickets` | One per seat per paid booking |
+| `tickets` | One per seat per confirmed booking |
+| `booking_outbox` | Transactional outbox for reliable Kafka event publishing |
+| `booking_idempotency_keys` | Idempotency store — prevents duplicate booking requests |
 
-**Cross-domain references to resolve in microservice**:
-- `booking.customer` → `customerId: String` (identity is resolved from JWT `sub` claim)
-- `booking.screening` → `screeningId: String` + denormalized fields
-- `ticket.screeningSeat` → `seatReservationId: UUID`
-- `bookingCombo.comboId` → cross-domain ref to Catalog Service `combos.id` (no FK constraint; resolved at order time via REST)
+**Cross-domain references**:
+- `bookings.user_id` → Identity Service user (resolved from JWT `sub` claim)
+- `bookings.showtime_id` → Showtime Service (no FK; referenced as UUID)
+- `seat_reservations.seat_id` → Catalog/Hall Service seat (no FK constraint; data snapshotted at lock time)
+- `booking_combos.combo_id` → Catalog Service `combos.id` (no FK constraint; validated at order time via REST)
 
 > **`combos` and `combo_items` tables are no longer owned by Booking Service.** They are managed entirely by Catalog Service.
 
 ---
 
-## 11. Error Codes (Booking-related)
+## 12. Error Codes (Booking-related)
 
 | Error Code | HTTP | When Thrown |
 |-----------|------|-------------|
 | `BOOKING_NOT_EXISTED` | 400 | Booking not found |
 | `BOOKING_EXCEED_SEAT_LIMIT` | 400 | More than 8 seats selected |
-| `SCREENING_SEATS_NOT_AVAILABLE` | 400 | One or more seats are already locked/sold |
+| `SHOWTIME_NOT_EXISTED` | 400 | Showtime not found |
+| `SHOWTIME_SEATS_NOT_AVAILABLE` | 400 | One or more seats are already locked or reserved |
+| `SEAT_ALREADY_LOCKED` | 409 | Seat is currently held by another user (Redis lock conflict) |
 | `ORPHAN_SEAT_VIOLATION` | 400 | Seat selection would leave a single isolated available seat |
-| `MOVIE_ALREADY_ENDED` | 400 | Movie status is `archived`; booking refused |
-| `INSUFFICIENT_LOYALTY_POINTS` | 400 | Customer has fewer points than requested to redeem |
-| `COMBO_NOT_EXISTED` | 400 | Combo is soft-deleted or not found |
+| `INSUFFICIENT_LOYALTY_POINTS` | 400 | User has fewer points than requested to redeem |
+| `COMBO_NOT_EXISTED` | 400 | Combo is soft-deleted or not found in Catalog Service |
 | `BOOKING_COMBO_NOT_EXISTED` | 400 | BookingCombo record not found during check-in |
 | `INSUFFICIENT_COMBO_QUANTITY` | 400 | `remain < requested quantity` at check-in |
-| `TICKET_NOT_EXISTED` | 400 | Ticket not found by ticketCode |
+| `TICKET_NOT_EXISTED` | 400 | Ticket not found by `ticketCode` |
 | `TICKET_NOT_ACTIVE` | 400 | Ticket status is not `ACTIVE` |
 | `TICKET_EXPIRED` | 400 | Ticket is past `expiresAt` |
-| `UNAUTHORIZED` | 403 | Customer does not own the ticket |
+| `UNAUTHORIZED` | 403 | User does not own this ticket or booking |
+| `IDEMPOTENCY_KEY_CONFLICT` | 409 | Same `idempotency_key` reused with a different request payload |
 
 ---
 
-## 12. Enums Reference
+## 13. Enums Reference
 
 | Enum | Values | Notes |
 |------|--------|-------|
-| `BookingStatus` | `PENDING`, ~~`CONFIRM`~~ **[DEPRECATED]**, `PAID`, `EXPIRED`, `CANCELLED`, `REFUNDED` | `CONFIRM` defined in monolith but never set; **remove from microservice enum** |
-| `SeatReservationStatus` | `AVAILABLE`, `LOCKED`, `BOOKED` | New enum for microservice; replaces `ScreeningSeatStatus` |
-| `ScreeningSeatStatus` *(mono only)* | `AVAILABLE`, `LOCKED`, `SOLD` | Used in monolith; `SOLD` → `BOOKED` in microservice |
+| `BookingStatus` | `INITIATED`, `PAYMENT_PENDING`, `CONFIRMED`, `COMPLETED`, `CANCELLED`, `FAILED` | Replaces monolith: `PENDING`→`INITIATED`, `PAID`→`CONFIRMED`/`COMPLETED`, `EXPIRED`/`REFUNDED`→`FAILED`/`CANCELLED`. `CONFIRM` dead code removed. |
+| `SeatReservationStatus` | `AVAILABLE`, `LOCKED`, `RESERVED`, `CONFIRMED`, `CANCELLED` | Maps to `seat_status` DB enum. Replaces monolith `ScreeningSeatStatus` (`AVAILABLE/LOCKED/SOLD`). |
 | `TicketStatus` | `ACTIVE`, `USED`, `CANCELLED`, `EXPIRED`, `FOR_TRANSFER` | |
+| `OutboxStatus` | `PENDING`, `PUBLISHED`, `FAILED` | Status of a `booking_outbox` record |
 
 ---
 
-## 13. Key Implementation Notes for Migration
+## 14. Key Implementation Notes for Migration
 
-1. **Price re-computation in `createBooking()`**: In the monolith, `calculateSeatSubtotal()` re-queries `PriceConfig` at booking time (duplicates Catalog logic). In the microservice, the `seat_reservation.price` is already the authoritative snapshot from `ScreeningCreated`. `booking.subtotal = SUM(seatReservation.price)` — no re-computation needed.
+1. **Price snapshot in `createBooking()`**: In the monolith, `calculateSeatSubtotal()` re-queries `PriceConfig` at booking time. In the microservice, `seat_reservation.price` is already the authoritative snapshot from `ShowtimeCreated`. `booking.total_amount = SUM(seatReservation.price)` — no re-computation needed.
 
-2. **`CustomerService` sync call**: `redeemPoints()` calls `customerService.getLoyaltyPoints()` — in the microservice this is a synchronous REST call to Identity Service. Consider caching or using an event-sourced model.
+2. **Loyalty points async**: In the monolith, `redeemPoints()` calls `customerService.getLoyaltyPoints()` synchronously. In the microservice, validation is a sync REST call to Identity Service, but point changes are applied via async `LoyaltyPointsEarned` / `LoyaltyPointsReversed` events.
 
-3. **`CONFIRM` status is dead code** (**Q9 decision**): `BookingStatus.CONFIRM` is defined in the monolith enum but is never assigned in any service method (`createBooking`, `confirmBookingPayment`, `cancelBooking`, `refundBooking`). **Decision**: remove from the microservice `BookingStatus` enum entirely. The state machine is `PENDING → PAID` directly on `PaymentConfirmed`; there is no intermediate confirmation state.
+3. **`BookingStatus` enum renamed**: Monolith `PENDING` → `INITIATED`; `PAID` → `CONFIRMED` then `COMPLETED`; `REFUNDED` → reversed via event after `CANCELLED`; `EXPIRED` → `FAILED`. `CONFIRM` was dead code in the monolith — removed entirely.
 
-4. **Ticket `qrContent` field**: The `qr_content` column stores a JSON string, not a QR image. In the microservice spec says "QR code removed" — clarify with team if this JSON payload should be simplified to just `ticketCode` or removed entirely from the Ticket entity.
+4. **Ticket `qrContent` field**: The `qr_content` column stores a JSON string, not a QR image. Clarify with team if this JSON payload should be simplified to just `ticketCode` or removed.
 
-5. **`Ticket.screeningSeat` cross-domain FK**: Replace with `seatReservationId: UUID` (reference to Booking Service's own `seat_reservations` table).
+5. **`Ticket.seatReservationId`**: Replaces monolith `Ticket.screeningSeat` cross-domain FK. References Booking Service's own `seat_reservations` table.
 
-6. **Booking `create-invoice` endpoint**: `POST /bookings/{id}/create-invoice` calls `InvoiceService.createInvoice()` directly in the monolith. In the microservice, this becomes an async event (`BookingCreated` triggers Payment Service to offer invoice creation).
+6. **Booking `create-invoice` endpoint**: `POST /bookings/{id}/create-invoice` triggers Payment Service in the microservice via the `BookingCreated` outbox event — not a direct sync call.
 
-7. **Redis implementation**: The monolith uses zero Redis. All seat locking is DB-only. The Redis `seat:lock:{screeningId}:{seatId}` layer is entirely new work.
+7. **Redis implementation**: The monolith uses zero Redis. All seat locking is DB-only. The Redis `seat:lock:{showtimeId}:{seatId}` layer is entirely new work.
 
-8. **Guest booking (null customer)**: Allowed in mono (counter staff can book without a customer account). In the microservice, decide if guest bookings are still in-scope — they require special handling since no `customerId` means no JWT claim to verify ownership.
+8. **Transactional Outbox**: All Kafka events are written to `booking_outbox` within the same DB transaction as the business operation. A relay process (polling or Debezium CDC) reads and publishes them, ensuring no event is lost if Kafka is temporarily unavailable.
+
+9. **Idempotency store**: The `booking_idempotency_keys` table stores the request hash and cached response. On duplicate requests with the same key, the cached response is returned. Records expire after 24 hours (cleaned by scheduler).
+
+10. **Optimistic Locking**: `bookings.version` is incremented on every UPDATE. Concurrent updates detect version conflicts and return `409 Conflict` or retry with exponential backoff.
 
 ---
 
@@ -796,15 +939,20 @@ void onScreeningCreated(ScreeningCreatedEvent event) {
 | Class | Package | Role |
 |-------|---------|------|
 | `Booking` | `booking.entity` | Core booking entity |
-| `BookingServiceImpl` | `booking.service` | All booking logic: create, cancel, confirm, refund, list |
+| `BookingServiceImpl` | `booking.service` | All booking logic: create, cancel, confirm, fail, list |
 | `DiscountService` | `booking.service` | Loyalty points: earn, redeem, reverse |
 | `BookingController` | `booking.controller` | REST endpoints for bookings |
 | `BookingCombo` | `bookingCombo.entity` | Denormalized combo snapshot per booking |
-| `BookingComboServiceImpl` | `bookingCombo.service` | Update/replace combos; calls Catalog Service REST to validate combo; get combos for check-in |
+| `BookingComboServiceImpl` | `bookingCombo.service` | Update/replace combos; calls Catalog Service REST to validate; get combos for check-in |
 | `BookingComboController` | `bookingCombo.controller` | `PUT /bookings/{id}/combos` |
-| `ScreeningSeat` | `screeningSeat.entity` | **Transitional → becomes `SeatReservation`** |
-| `ScreeningSeatStatus` | `screeningSeat.enums` | `AVAILABLE/LOCKED/SOLD` → renamed `BOOKED` |
-| `Ticket` | `ticket.entity` | Ticket issued after payment |
+| `SeatReservation` | `seatReservation.entity` | Seat reservation per booking (replaces monolith `ScreeningSeat`) |
+| `SeatReservationStatus` | `seatReservation.enums` | `AVAILABLE/LOCKED/RESERVED/CONFIRMED/CANCELLED` |
+| `SeatReservationRepository` | `seatReservation.repository` | JPA repo; `lockSeats()` CAS-style update |
+| `BookingOutbox` | `outbox.entity` | Transactional outbox record |
+| `OutboxRelayService` | `outbox.service` | Polls `booking_outbox` and publishes to Kafka; marks records `PUBLISHED` |
+| `BookingIdempotencyKey` | `idempotency.entity` | Idempotency record per request attempt |
+| `IdempotencyService` | `idempotency.service` | Check / store idempotency keys; replay cached responses |
+| `Ticket` | `ticket.entity` | Ticket issued after payment confirmed |
 | `TicketServiceImpl` | `ticket.service` | Create tickets, check-in, expire, transfer |
 | `TicketController` | `ticket.controller` | REST endpoints for tickets |
 | `TicketCodeGenerator` | `ticket.service` | `"TK-" + UUID(8).toUpperCase()` |
@@ -812,4 +960,4 @@ void onScreeningCreated(ScreeningCreatedEvent event) {
 
 ---
 
-*Updated: 2026-06-24 | Source: direct code read of all entities, services, controllers, mappers, enums in `booking/`, `bookingCombo/`, `screeningSeat/`, `ticket/` packages. `combo/` package moved to Catalog Service.*
+*Updated: 2026-06-25 | Aligned with target DDL (PostgreSQL 15 / Supabase). All `screening` references renamed to `showtime`. Added `booking_outbox` (Transactional Outbox pattern) and `booking_idempotency_keys`. `BookingStatus` enum updated: `INITIATED/PAYMENT_PENDING/CONFIRMED/COMPLETED/CANCELLED/FAILED`. `SeatReservationStatus` updated: `AVAILABLE/LOCKED/RESERVED/CONFIRMED/CANCELLED`. `seat_reservations` replaces monolith `ScreeningSeat` entirely.*

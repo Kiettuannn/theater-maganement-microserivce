@@ -1,0 +1,69 @@
+spring:
+  application:
+    name: payment-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5435/payment_db
+    username: admin
+    password: admin123
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: true
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    default-property-inclusion: non_null
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: payment-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+
+server:
+  port: 8085
+  servlet:
+    context-path: /payment
+
+# OpenFeign — Booking Service URL
+feign:
+  booking-service:
+    url: http://localhost:8081
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 5000
+
+# VNPay config (điền key thật sau)
+vnpay:
+  tmn-code: ${VNPAY_TMN_CODE:DEMOTEST}
+  hash-secret: ${VNPAY_HASH_SECRET:DEMOSECRET1234567890123456789012}
+  url: https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+  return-url: ${VNPAY_RETURN_URL:http://localhost:8082/payment/vnpay-return}
+  version: "2.1.0"
+  command: pay
+  order-type: other
+
+logging:
+  level:
+    theater_mgnt: DEBUG
+    org.springframework.kafka: INFO
