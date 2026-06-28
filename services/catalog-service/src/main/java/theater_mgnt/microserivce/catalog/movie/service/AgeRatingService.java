@@ -29,10 +29,6 @@ public class AgeRatingService {
     // CREATE
     public AgeRatingResponse createAgeRating(CreateAgeRatingRequest request) {
 
-        if (ageRatingRepository.existsById(request.getId())) {
-            throw new AppException(ErrorCode.AGERATING_EXISTED);
-        }
-
         if (ageRatingRepository.findByCode(request.getCode()).isPresent()) {
             throw new AppException(ErrorCode.AGERATING_CODE_EXISTED);
         }

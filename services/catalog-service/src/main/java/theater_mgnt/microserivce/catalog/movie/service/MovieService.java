@@ -107,13 +107,13 @@ public class MovieService {
     }
 
     public List<MovieSimpleResponse> getNowShowingMovies() {
-        return movieRepository.findNowShowingMovies(MovieStatus.now_showing).stream()
+        return movieRepository.findNowShowingMovies(MovieStatus.NOW_SHOWING).stream()
                 .map(movieMapper::toMovieSimpleResponse)
                 .collect(Collectors.toList());
     }
 
     public List<MovieSimpleResponse> getComingSoonMovies() {
-        return movieRepository.findComingSoonMovies(MovieStatus.coming_soon).stream()
+        return movieRepository.findComingSoonMovies(MovieStatus.COMING_SOON).stream()
                 .map(movieMapper::toMovieSimpleResponse)
                 .collect(Collectors.toList());
     }
@@ -141,7 +141,7 @@ public class MovieService {
     public MovieResponse updateMovie(String id, UpdateMovieRequest request) {
         Movie movie = movieRepository.findById(id).orElseThrow(() -> new AppException(ErrorCode.MOVIE_NOT_EXISTED));
 
-        if (request.getStatus() == MovieStatus.archived
+        if (request.getStatus() == MovieStatus.ARCHIVED
                 && showtimeRepository.existsByMovieIdAndStatus(id, ShowtimeStatus.SCHEDULED)) {
             throw new AppException(ErrorCode.MOVIE_HAS_SCHEDULED_SCREENINGS);
         }
@@ -188,14 +188,14 @@ public class MovieService {
             throw new AppException(ErrorCode.MOVIE_HAS_SCHEDULED_SCREENINGS);
         }
 
-        movie.setStatus(MovieStatus.archived);
+        movie.setStatus(MovieStatus.ARCHIVED);
         Movie archivedMovie = movieRepository.save(movie);
 
         return movieMapper.toMovieResponse(archivedMovie);
     }
 
     private boolean shouldShowArchiveWarning(Movie movie) {
-        if (movie.getStatus() != MovieStatus.now_showing) {
+        if (movie.getStatus() != MovieStatus.NOW_SHOWING) {
             return false;
         }
 
