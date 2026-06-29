@@ -11,7 +11,6 @@ import theater_mgnt.microserivce.catalog.common.dto.response.ApiResponse;
 import theater_mgnt.microserivce.catalog.movie.dto.request.CreateMovieRequest;
 import theater_mgnt.microserivce.catalog.movie.dto.request.UpdateMovieRequest;
 import theater_mgnt.microserivce.catalog.movie.dto.response.MovieResponse;
-import theater_mgnt.microserivce.catalog.movie.dto.response.MovieSimpleResponse;
 import theater_mgnt.microserivce.catalog.common.enums.MovieStatus;
 import theater_mgnt.microserivce.catalog.movie.service.MovieService;
 
@@ -40,8 +39,8 @@ public class MovieController {
     // ========== READ ==========
 
     @GetMapping
-    ApiResponse<List<MovieSimpleResponse>> getAllMovies() {
-        return ApiResponse.<List<MovieSimpleResponse>>builder()
+    ApiResponse<List<MovieResponse>> getAllMovies() {
+        return ApiResponse.<List<MovieResponse>>builder()
                 .result(movieService.getAllMovies())
                 .build();
     }
@@ -61,36 +60,36 @@ public class MovieController {
     }
 
     @GetMapping("/status/{status}")
-    ApiResponse<List<MovieSimpleResponse>> getMoviesByStatus(@PathVariable("status") MovieStatus status) {
-        return ApiResponse.<List<MovieSimpleResponse>>builder()
+    ApiResponse<List<MovieResponse>> getMoviesByStatus(@PathVariable("status") MovieStatus status) {
+        return ApiResponse.<List<MovieResponse>>builder()
                 .result(movieService.getMoviesByStatus(status))
                 .build();
     }
 
     @GetMapping("/now-showing")
-    ApiResponse<List<MovieSimpleResponse>> getNowShowingMovies() {
-        return ApiResponse.<List<MovieSimpleResponse>>builder()
+    ApiResponse<List<MovieResponse>> getNowShowingMovies() {
+        return ApiResponse.<List<MovieResponse>>builder()
                 .result(movieService.getNowShowingMovies())
                 .build();
     }
 
     @GetMapping("/coming-soon")
-    ApiResponse<List<MovieSimpleResponse>> getComingSoonMovies() {
-        return ApiResponse.<List<MovieSimpleResponse>>builder()
+    ApiResponse<List<MovieResponse>> getComingSoonMovies() {
+        return ApiResponse.<List<MovieResponse>>builder()
                 .result(movieService.getComingSoonMovies())
                 .build();
     }
 
     @GetMapping("/search")
-    ApiResponse<List<MovieSimpleResponse>> searchMoviesByTitle(@RequestParam("title") String title) {
-        return ApiResponse.<List<MovieSimpleResponse>>builder()
+    ApiResponse<List<MovieResponse>> searchMoviesByTitle(@RequestParam("title") String title) {
+        return ApiResponse.<List<MovieResponse>>builder()
                 .result(movieService.searchMoviesByTitle(title))
                 .build();
     }
 
     @GetMapping("/genre/{genreId}")
-    ApiResponse<List<MovieSimpleResponse>> getMoviesByGenre(@PathVariable("genreId") String genreId) {
-        return ApiResponse.<List<MovieSimpleResponse>>builder()
+    ApiResponse<List<MovieResponse>> getMoviesByGenre(@PathVariable("genreId") String genreId) {
+        return ApiResponse.<List<MovieResponse>>builder()
                 .result(movieService.getMoviesByGenre(genreId))
                 .build();
     }

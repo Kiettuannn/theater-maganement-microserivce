@@ -18,7 +18,6 @@ import theater_mgnt.microserivce.catalog.common.exception.ErrorCode;
 import theater_mgnt.microserivce.catalog.movie.dto.request.CreateMovieRequest;
 import theater_mgnt.microserivce.catalog.movie.dto.request.UpdateMovieRequest;
 import theater_mgnt.microserivce.catalog.movie.dto.response.MovieResponse;
-import theater_mgnt.microserivce.catalog.movie.dto.response.MovieSimpleResponse;
 import theater_mgnt.microserivce.catalog.movie.entity.AgeRating;
 import theater_mgnt.microserivce.catalog.movie.entity.Genre;
 import theater_mgnt.microserivce.catalog.movie.entity.Movie;
@@ -77,11 +76,11 @@ public class MovieService {
     }
 
     // ========== READ ==========
-    public List<MovieSimpleResponse> getAllMovies() {
+    public List<MovieResponse> getAllMovies() {
         List<Movie> movies = movieRepository.findAllWithGenres();
         return movies.stream()
                 .map(movie -> {
-                    MovieSimpleResponse response = movieMapper.toMovieSimpleResponse(movie);
+                    MovieResponse response = movieMapper.toMovieResponse(movie);
                     response.setNeedsArchiveWarning(shouldShowArchiveWarning(movie));
                     return response;
                 })
@@ -90,48 +89,53 @@ public class MovieService {
 
     @Cacheable(value = "movie", key = "'id:' + #id")
     public MovieResponse getMovieById(String id) {
-        Movie movie = movieRepository.findById(id).orElseThrow(() -> new AppException(ErrorCode.MOVIE_NOT_EXISTED));
+        Movie movie = movieRepository.findByIdWithGenres(id)
+                .orElseThrow(() -> new AppException(ErrorCode.MOVIE_NOT_EXISTED));
         return movieMapper.toMovieResponse(movie);
     }
 
     @Cacheable(value = "movie", key = "'slug:' + #slug")
     public MovieResponse getMovieBySlug(String slug) {
-        Movie movie = movieRepository.findBySlug(slug).orElseThrow(() -> new AppException(ErrorCode.MOVIE_NOT_EXISTED));
+        Movie movie = movieRepository.findBySlugWithGenres(slug)
+                .orElseThrow(() -> new AppException(ErrorCode.MOVIE_NOT_EXISTED));
         return movieMapper.toMovieResponse(movie);
     }
 
-    public List<MovieSimpleResponse> getMoviesByStatus(MovieStatus status) {
+    @Transactional(readOnly = true)
+    public List<MovieResponse> getMoviesByStatus(MovieStatus status) {
         return movieRepository.findByStatus(status).stream()
-                .map(movieMapper::toMovieSimpleResponse)
+                .map(movieMapper::toMovieResponse)
                 .collect(Collectors.toList());
     }
 
-    public List<MovieSimpleResponse> getNowShowingMovies() {
-        return movieRepository.findNowShowingMovies(MovieStatus.NOW_SHOWING).stream()
-                .map(movieMapper::toMovieSimpleResponse)
+    @Transactional(readOnly = true)
+    public List<MovieResponse> getNowShowingMovies() {
+        return movieRepository.findNowShowingMovies(MovieStatus.now_showing).stream()
+                .map(movieMapper::toMovieResponse)
                 .collect(Collectors.toList());
     }
 
-    public List<MovieSimpleResponse> getComingSoonMovies() {
-        return movieRepository.findComingSoonMovies(MovieStatus.COMING_SOON).stream()
-                .map(movieMapper::toMovieSimpleResponse)
+    @Transactional(readOnly = true)
+    public List<MovieResponse> getComingSoonMovies() {
+        return movieRepository.findComingSoonMovies(MovieStatus.coming_soon).stream()
+                .map(movieMapper::toMovieResponse)
                 .collect(Collectors.toList());
     }
 
-    public List<MovieSimpleResponse> searchMoviesByTitle(String title) {
+    @Transactional(readOnly = true)
+    public List<MovieResponse> searchMoviesByTitle(String title) {
         return movieRepository.findByTitleContainingIgnoreCase(title).stream()
-                .map(movieMapper::toMovieSimpleResponse)
+                .map(movieMapper::toMovieResponse)
                 .collect(Collectors.toList());
     }
 
-    public List<MovieSimpleResponse> getMoviesByGenre(String genreId) {
-        // Validate Genre exists
+    @Transactional(readOnly = true)
+    public List<MovieResponse> getMoviesByGenre(String genreId) {
         if (!genreRepository.existsById(genreId)) {
             throw new AppException(ErrorCode.GENRE_NOT_EXISTED);
         }
-
         return movieRepository.findByGenreId(genreId).stream()
-                .map(movieMapper::toMovieSimpleResponse)
+                .map(movieMapper::toMovieResponse)
                 .collect(Collectors.toList());
     }
 
@@ -141,7 +145,7 @@ public class MovieService {
     public MovieResponse updateMovie(String id, UpdateMovieRequest request) {
         Movie movie = movieRepository.findById(id).orElseThrow(() -> new AppException(ErrorCode.MOVIE_NOT_EXISTED));
 
-        if (request.getStatus() == MovieStatus.ARCHIVED
+        if (request.getStatus() == MovieStatus.archived
                 && showtimeRepository.existsByMovieIdAndStatus(id, ShowtimeStatus.SCHEDULED)) {
             throw new AppException(ErrorCode.MOVIE_HAS_SCHEDULED_SCREENINGS);
         }
@@ -188,14 +192,14 @@ public class MovieService {
             throw new AppException(ErrorCode.MOVIE_HAS_SCHEDULED_SCREENINGS);
         }
 
-        movie.setStatus(MovieStatus.ARCHIVED);
+        movie.setStatus(MovieStatus.archived);
         Movie archivedMovie = movieRepository.save(movie);
 
         return movieMapper.toMovieResponse(archivedMovie);
     }
 
     private boolean shouldShowArchiveWarning(Movie movie) {
-        if (movie.getStatus() != MovieStatus.NOW_SHOWING) {
+        if (movie.getStatus() != MovieStatus.now_showing) {
             return false;
         }
 

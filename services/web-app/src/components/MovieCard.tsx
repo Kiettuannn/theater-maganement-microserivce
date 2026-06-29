@@ -1,25 +1,19 @@
 import { FC } from "react";
-import { Card, Badge, Rate, Tag } from "antd";
+import { Card, Badge, Tag } from "antd";
 import { Link } from "react-router-dom";
-import type { Movie } from "../lib/mock-data";
+import type { MovieSimple } from "../services/movie";
 import "../styles/App.css";
 
 interface MovieCardProps {
-  movie: Movie;
-  onSelect?: (movie: Movie) => void;
+  movie: MovieSimple;
+  onSelect?: (movie: MovieSimple) => void;
 }
 
 const MovieCard: FC<MovieCardProps> = ({ movie, onSelect }) => {
   const fallbackImage = "/images/placeholder.svg";
 
-  const handleClick = () => {
-    if (onSelect) {
-      onSelect(movie);
-    }
-  };
-
   return (
-    <Link to={`/movie/${movie.id}`} onClick={handleClick}>
+    <Link to={`/movie/${movie.id}`} onClick={() => onSelect?.(movie)}>
       <Card
         hoverable
         className="movie-card"
@@ -27,7 +21,7 @@ const MovieCard: FC<MovieCardProps> = ({ movie, onSelect }) => {
           <div style={{ position: "relative", overflow: "hidden" }}>
             <img
               alt={movie.title}
-              src={movie.image}
+              src={movie.posterUrl}
               className="movie-image"
               onError={(e) => {
                 const img = e.currentTarget as HTMLImageElement;
@@ -37,7 +31,7 @@ const MovieCard: FC<MovieCardProps> = ({ movie, onSelect }) => {
             />
             <Badge
               count={
-                movie.status === "coming-soon" ? (
+                movie.status === "coming_soon" ? (
                   <Tag color="blue">Coming Soon</Tag>
                 ) : (
                   <Tag color="green">Now Showing</Tag>
@@ -51,37 +45,21 @@ const MovieCard: FC<MovieCardProps> = ({ movie, onSelect }) => {
       >
         <Card.Meta
           title={
-            <div
-              style={{ fontWeight: 600, fontSize: "16px", color: "#0052A3" }}
-            >
+            <div style={{ fontWeight: 600, fontSize: "16px", color: "#0052A3" }}>
               {movie.title}
             </div>
           }
           description={
             <div>
               <div style={{ marginBottom: "8px" }}>
-                <Rate
-                  disabled
-                  value={movie.rating / 2}
-                  style={{ fontSize: "14px" }}
-                />
-                <span style={{ marginLeft: "8px", color: "#666" }}>
-                  {movie.rating.toFixed(1)}
-                </span>
-              </div>
-              <div style={{ marginBottom: "8px" }}>
-                {movie.genre.map((g) => (
-                  <Tag
-                    key={g}
-                    color="blue"
-                    style={{ marginRight: "4px", marginBottom: "4px" }}
-                  >
-                    {g}
+                {movie.genres.map((g) => (
+                  <Tag key={g.id} color="blue" style={{ marginRight: "4px", marginBottom: "4px" }}>
+                    {g.name}
                   </Tag>
                 ))}
               </div>
               <div style={{ color: "#666", fontSize: "14px" }}>
-                Duration: {movie.duration} min
+                Duration: {movie.durationMinutes} min
               </div>
             </div>
           }

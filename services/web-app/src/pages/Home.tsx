@@ -1,13 +1,13 @@
 import { FC } from 'react';
-import { Typography, Button, Row, Col } from 'antd';
+import { Typography, Button, Row, Col, Spin, Alert } from 'antd';
 import MovieGrid from '../components/MovieGrid';
-import { getNowShowingMovies } from '../lib/mock-data';
+import { useNowShowingMovies } from '../hooks/useMovies';
 import '../styles/App.css';
 
 const { Title, Paragraph } = Typography;
 
 const Home: FC = () => {
-  const nowShowingMovies = getNowShowingMovies();
+  const { movies, loading, error } = useNowShowingMovies();
 
   return (
     <div className="page-container">
@@ -22,7 +22,9 @@ const Home: FC = () => {
         </Col>
       </Row>
 
-      <MovieGrid movies={nowShowingMovies} />
+      {loading && <Spin size="large" style={{ display: 'block', textAlign: 'center', marginTop: '60px' }} />}
+      {error && <Alert type="error" message={error} style={{ marginBottom: '24px' }} />}
+      {!loading && <MovieGrid movies={movies} />}
 
       <Row gutter={[24, 24]} style={{ marginTop: '60px', textAlign: 'center' }}>
         <Col xs={24}>

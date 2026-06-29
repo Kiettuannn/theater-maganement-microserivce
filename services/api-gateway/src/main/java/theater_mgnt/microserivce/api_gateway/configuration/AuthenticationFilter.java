@@ -38,8 +38,17 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     private String[] publicEndpoints = {
             "/identity/auth/.*",
             "/identity/users/registration",
-            "/identity/users/username/available", // Public for check available username when register
-            "/identity/users/email/available" // Public for check available email when register
+            "/identity/users/username/available",
+            "/identity/users/email/available",
+
+            // Catalog - Movies (public read)
+            "/catalog/movies",
+            "/catalog/movies/now-showing",
+            "/catalog/movies/coming-soon",
+            "/catalog/movies/[^/]+",
+            "/catalog/movies/search",
+            "/catalog/movies/genre/[^/]+",
+            "/catalog/movies/slug/[^/]+",
     };
 
     @Value("${app.api-prefix}")
