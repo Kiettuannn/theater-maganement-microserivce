@@ -13,16 +13,17 @@ import {
   Typography,
   Segmented,
   Skeleton,
+  Spin,
   Tag,
 } from "antd";
 import dayjs from "dayjs";
 import {
-  getMovieById,
   getShowtimesByMovieId,
   getCinemaById,
   type Cinema,
   type Showtime,
 } from "../lib/mock-data";
+import { useMovieDetail } from "../hooks/useMovies";
 import { useBooking } from "../hooks/useBooking";
 import "../styles/App.css";
 
@@ -184,14 +185,110 @@ const Booking: FC = () => {
   const [current, setCurrent] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
-  const movie = useMemo(
-    () => (movieId ? getMovieById(movieId) : null),
-    [movieId],
-  );
+  const { movie, loading: movieLoading } = useMovieDetail(movieId);
   const showtimes = useMemo(
     () => (movieId ? getShowtimesByMovieId(movieId) : []),
     [movieId],
   );
+
+  const availableDates = useMemo(() => {
+    const uniqueDates = new Set(showtimes.map((s) => s.date));
+    return Array.from(uniqueDates).sort(
+      (a, b) => dayjs(a).valueOf() - dayjs(b).valueOf(),
+    );
+  }, [showtimes]);
+
+  const availableDateKey = availableDates.join("|");
+  const baseDate = availableDates[0] || dayjs().format("YYYY-MM-DD");
+
+  const dateOptions = useMemo(() => {
+    const base = dayjs(baseDate);
+    const availableSet = new Set(availableDates);
+    return Array.from({ length: 7 }).map((_, index) => {
+      const date = base.add(index, "day");
+      const dateValue = date.format("YYYY-MM-DD");
+      const diff = date.diff(base, "day");
+      const label =
+        diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : date.format("ddd");
+      return {
+        date: dateValue,
+        label,
+        subLabel: date.format("MMM D"),
+        disabled: !availableSet.has(dateValue),
+      };
+    });
+  }, [availableDateKey, baseDate, availableDates]);
+
+  const showtimesForDate = useMemo(() => {
+    if (!booking.date) return [];
+    return showtimes.filter((showtime) => showtime.date === booking.date);
+  }, [booking.date, showtimes]);
+
+  const sortedShowtimesForDate = useMemo(
+    () => showtimesForDate.slice().sort((a, b) => a.time.localeCompare(b.time)),
+    [showtimesForDate],
+  );
+
+  const cinemaGroups = useMemo<CinemaGroup[]>(() => {
+    const grouped = new Map<string, Showtime[]>();
+    sortedShowtimesForDate.forEach((showtime) => {
+      if (!grouped.has(showtime.cinemaId)) grouped.set(showtime.cinemaId, []);
+      grouped.get(showtime.cinemaId)?.push(showtime);
+    });
+    return Array.from(grouped.entries())
+      .map(([cinemaId, times]) => {
+        const cinema = getCinemaById(cinemaId);
+        if (!cinema) return null;
+        return { cinema, showtimes: times };
+      })
+      .filter((group): group is CinemaGroup => Boolean(group));
+  }, [sortedShowtimesForDate]);
+
+  useEffect(() => {
+    if (!availableDates.length) {
+      if (booking.date || booking.showtimeId || booking.cinemaId) {
+        updateBooking({ date: null, cinemaId: null, showtimeId: null, selectedSeats: [], totalPrice: 0 });
+      }
+      return;
+    }
+    if (!booking.date || !availableDates.includes(booking.date)) {
+      updateBooking({ date: availableDates[0], cinemaId: null, showtimeId: null, selectedSeats: [], totalPrice: 0 });
+    }
+  }, [availableDateKey, booking.cinemaId, booking.date, booking.showtimeId, availableDates, updateBooking]);
+
+  useEffect(() => {
+    if (!booking.date) return;
+    if (!sortedShowtimesForDate.length) {
+      if (booking.showtimeId || booking.cinemaId) {
+        updateBooking({ showtimeId: null, cinemaId: null, selectedSeats: [], totalPrice: 0 });
+      }
+      return;
+    }
+    const selectedStillValid = sortedShowtimesForDate.some(
+      (showtime) => showtime.id === booking.showtimeId,
+    );
+    if (!selectedStillValid) {
+      const nextShowtime =
+        sortedShowtimesForDate.find((s) => s.availableSeats > 0) ||
+        sortedShowtimesForDate[0];
+      updateBooking({ showtimeId: nextShowtime.id, cinemaId: nextShowtime.cinemaId, selectedSeats: [], totalPrice: 0 });
+    }
+  }, [booking.cinemaId, booking.date, booking.showtimeId, sortedShowtimesForDate, updateBooking]);
+
+  useEffect(() => {
+    setIsLoading(true);
+    const timer = window.setTimeout(() => setIsLoading(false), 450);
+    return () => window.clearTimeout(timer);
+  }, [booking.date, movieId]);
+
+  // ── Early returns SAU tất cả hooks ──
+  if (movieLoading) {
+    return (
+      <div className="page-container">
+        <Spin size="large" style={{ display: "block", textAlign: "center", marginTop: "60px" }} />
+      </div>
+    );
+  }
 
   if (!movie) {
     return (
@@ -208,16 +305,13 @@ const Booking: FC = () => {
     );
   }
 
-  if (movie.status === "coming-soon") {
+  if (movie.status === "coming_soon") {
     return (
       <div className="page-container">
         <Empty
           description="This movie is coming soon"
           children={
-            <Button
-              type="primary"
-              onClick={() => navigate(`/movie/${movie.id}`)}
-            >
+            <Button type="primary" onClick={() => navigate(`/movie/${movie.id}`)}>
               Back to Movie Details
             </Button>
           }
@@ -227,154 +321,8 @@ const Booking: FC = () => {
   }
 
   const selectedShowtime = showtimes.find((s) => s.id === booking.showtimeId);
-  const selectedCinema = booking.cinemaId
-    ? getCinemaById(booking.cinemaId)
-    : null;
-
-  const availableDates = useMemo(() => {
-    const uniqueDates = new Set(showtimes.map((s) => s.date));
-    return Array.from(uniqueDates).sort(
-      (a, b) => dayjs(a).valueOf() - dayjs(b).valueOf(),
-    );
-  }, [showtimes]);
-
-  const availableDateKey = availableDates.join("|");
-  const baseDate = availableDates[0] || dayjs().format("YYYY-MM-DD");
-
-  const dateOptions = useMemo(() => {
-    const base = dayjs(baseDate);
-    const availableSet = new Set(availableDates);
-
-    return Array.from({ length: 7 }).map((_, index) => {
-      const date = base.add(index, "day");
-      const dateValue = date.format("YYYY-MM-DD");
-      const diff = date.diff(base, "day");
-      const label =
-        diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : date.format("ddd");
-
-      return {
-        date: dateValue,
-        label,
-        subLabel: date.format("MMM D"),
-        disabled: !availableSet.has(dateValue),
-      };
-    });
-  }, [availableDateKey, baseDate, availableDates]);
-
-  const showtimesForDate = useMemo(() => {
-    if (!booking.date) {
-      return [];
-    }
-    return showtimes.filter((showtime) => showtime.date === booking.date);
-  }, [booking.date, showtimes]);
-
-  const sortedShowtimesForDate = useMemo(
-    () => showtimesForDate.slice().sort((a, b) => a.time.localeCompare(b.time)),
-    [showtimesForDate],
-  );
-
-  const cinemaGroups = useMemo<CinemaGroup[]>(() => {
-    const grouped = new Map<string, Showtime[]>();
-    sortedShowtimesForDate.forEach((showtime) => {
-      if (!grouped.has(showtime.cinemaId)) {
-        grouped.set(showtime.cinemaId, []);
-      }
-      grouped.get(showtime.cinemaId)?.push(showtime);
-    });
-
-    return Array.from(grouped.entries())
-      .map(([cinemaId, times]) => {
-        const cinema = getCinemaById(cinemaId);
-        if (!cinema) {
-          return null;
-        }
-        return {
-          cinema,
-          showtimes: times,
-        };
-      })
-      .filter((group): group is CinemaGroup => Boolean(group));
-  }, [sortedShowtimesForDate]);
-
-  useEffect(() => {
-    if (!availableDates.length) {
-      if (booking.date || booking.showtimeId || booking.cinemaId) {
-        updateBooking({
-          date: null,
-          cinemaId: null,
-          showtimeId: null,
-          selectedSeats: [],
-          totalPrice: 0,
-        });
-      }
-      return;
-    }
-
-    if (!booking.date || !availableDates.includes(booking.date)) {
-      updateBooking({
-        date: availableDates[0],
-        cinemaId: null,
-        showtimeId: null,
-        selectedSeats: [],
-        totalPrice: 0,
-      });
-    }
-  }, [
-    availableDateKey,
-    booking.cinemaId,
-    booking.date,
-    booking.showtimeId,
-    availableDates,
-    updateBooking,
-  ]);
-
-  useEffect(() => {
-    if (!booking.date) {
-      return;
-    }
-
-    if (!sortedShowtimesForDate.length) {
-      if (booking.showtimeId || booking.cinemaId) {
-        updateBooking({
-          showtimeId: null,
-          cinemaId: null,
-          selectedSeats: [],
-          totalPrice: 0,
-        });
-      }
-      return;
-    }
-
-    const selectedStillValid = sortedShowtimesForDate.some(
-      (showtime) => showtime.id === booking.showtimeId,
-    );
-
-    if (!selectedStillValid) {
-      const nextShowtime =
-        sortedShowtimesForDate.find(
-          (showtime) => showtime.availableSeats > 0,
-        ) || sortedShowtimesForDate[0];
-
-      updateBooking({
-        showtimeId: nextShowtime.id,
-        cinemaId: nextShowtime.cinemaId,
-        selectedSeats: [],
-        totalPrice: 0,
-      });
-    }
-  }, [
-    booking.cinemaId,
-    booking.date,
-    booking.showtimeId,
-    sortedShowtimesForDate,
-    updateBooking,
-  ]);
-
-  useEffect(() => {
-    setIsLoading(true);
-    const timer = window.setTimeout(() => setIsLoading(false), 450);
-    return () => window.clearTimeout(timer);
-  }, [booking.date, movieId]);
+  const selectedCinema = booking.cinemaId ? getCinemaById(booking.cinemaId) : null;
+  const suggestedDate = availableDates.find((date) => date !== booking.date) || null;
 
   const handleNext = () => {
     if (current === 0) {
@@ -391,9 +339,7 @@ const Booking: FC = () => {
     setCurrent(current + 1);
   };
 
-  const handlePrev = () => {
-    setCurrent(current - 1);
-  };
+  const handlePrev = () => setCurrent(current - 1);
 
   const handleCheckout = () => {
     updateBooking({ movieId: movie.id });
@@ -401,27 +347,12 @@ const Booking: FC = () => {
   };
 
   const handleDateChange = (date: string) => {
-    updateBooking({
-      date,
-      cinemaId: null,
-      showtimeId: null,
-      selectedSeats: [],
-      totalPrice: 0,
-    });
+    updateBooking({ date, cinemaId: null, showtimeId: null, selectedSeats: [], totalPrice: 0 });
   };
 
   const handleShowtimeSelect = (showtime: Showtime) => {
-    updateBooking({
-      date: showtime.date,
-      cinemaId: showtime.cinemaId,
-      showtimeId: showtime.id,
-      selectedSeats: [],
-      totalPrice: 0,
-    });
+    updateBooking({ date: showtime.date, cinemaId: showtime.cinemaId, showtimeId: showtime.id, selectedSeats: [], totalPrice: 0 });
   };
-
-  const suggestedDate =
-    availableDates.find((date) => date !== booking.date) || null;
 
   const renderStep0 = () => (
     <div className="steps-container booking-step">
