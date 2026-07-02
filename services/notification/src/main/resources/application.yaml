@@ -9,7 +9,7 @@ spring:
     mongodb:
       uri: mongodb://root:root@localhost:27017/notification-service?authSource=admin
   kafka:
-    bootstrap-servers: localhost:9094
+    bootstrap-servers: localhost:9092
     consumer:
       group-id: notification-group
       auto-offset-reset: earliest
