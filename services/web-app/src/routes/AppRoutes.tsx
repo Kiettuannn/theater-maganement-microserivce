@@ -21,8 +21,8 @@ const AppRoutes = () => (
         <Route path="/coming-soon" element={<ComingSoon />} />
         <Route path="/movie/:id" element={<MovieDetail />} />
         <Route path="/booking/:movieId" element={<Booking />} />
-        <Route path="/checkout" element={<Checkout />} />
-        <Route path="/confirmation/:orderId" element={<Confirmation />} />
+        <Route path="/checkout/:bookingId" element={<Checkout />} />
+        <Route path="/confirmation/:bookingId" element={<Confirmation />} />
       </Route>
       <Route element={<PrivateRoute layout={AuthenticatedLayout} />}>
         <Route path="/my-bookings" element={<MyBookings />} />

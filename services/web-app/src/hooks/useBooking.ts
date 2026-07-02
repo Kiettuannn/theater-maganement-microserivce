@@ -5,8 +5,11 @@ export interface BookingState {
   date: string | null;
   cinemaId: string | null;
   showtimeId: string | null;
+  showtimeTime?: string;
   selectedSeats: string[];
   totalPrice: number;
+  movieTitle?: string;
+  cinemaName?: string;
 }
 
 export const useBooking = () => {

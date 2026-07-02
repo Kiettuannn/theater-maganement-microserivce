@@ -17,15 +17,15 @@ import {
   Tag,
 } from "antd";
 import dayjs from "dayjs";
-import {
-  getShowtimesByMovieId,
-  getCinemaById,
-  type Cinema,
-  type Showtime,
-} from "../lib/mock-data";
+import { v4 as uuidv4 } from "uuid";
+import { getShowtimesByMovieId, getCinemaById } from "../lib/mock-data";
 import { useMovieDetail } from "../hooks/useMovies";
 import { useShowtimesByMovie } from "../hooks/useShowtimes";
 import { useBooking } from "../hooks/useBooking";
+import { useSeats, useShowtimeDetails } from "../hooks/useSeats";
+import { createBooking } from "../services/booking";
+import { useAuthStore } from "../stores/useAuthStore";
+import type { Showtime } from "../services/showtime";
 import "../styles/App.css";
 
 const { Title, Text } = Typography;
@@ -183,11 +183,14 @@ const Booking: FC = () => {
   const { movieId } = useParams<{ movieId: string }>();
   const navigate = useNavigate();
   const { booking, updateBooking } = useBooking();
+  const { userId } = useAuthStore();
   const [current, setCurrent] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   const { movie, loading: movieLoading } = useMovieDetail(movieId);
   const { showtimes: apiShowtimes, loading: showtimesLoading } = useShowtimesByMovie(movieId);
+  const { seats: apiSeats, loading: seatsLoading } = useSeats(booking.showtimeId);
+  const { details: showtimeDetails, loading: detailsLoading } = useShowtimeDetails(apiShowtimes || []);
 
   const showtimes = useMemo(() => {
     if (!apiShowtimes) return [];
@@ -197,11 +200,11 @@ const Booking: FC = () => {
       cinemaId: st.roomId,
       time: dayjs(st.startTime).format("HH:mm"),
       date: dayjs(st.startTime).format("YYYY-MM-DD"),
-      availableSeats: 60,
-      price: 120000,
+      availableSeats: showtimeDetails[st.id]?.availableSeats || 0,
+      price: showtimeDetails[st.id]?.price || 0,
       cinemaName: st.roomName,
     })) as (Showtime & { cinemaName?: string })[];
-  }, [apiShowtimes]);
+  }, [apiShowtimes, showtimeDetails]);
 
   const availableDates = useMemo(() => {
     const uniqueDates = new Set(showtimes.map((s) => s.date));
@@ -359,9 +362,40 @@ const Booking: FC = () => {
 
   const handlePrev = () => setCurrent(current - 1);
 
-  const handleCheckout = () => {
-    updateBooking({ movieId: movie.id });
-    navigate("/checkout");
+  const handleCheckout = async () => {
+    if (!booking.showtimeId || booking.selectedSeats.length === 0) {
+      message.error("Please select showtime and seats");
+      return;
+    }
+
+    if (!userId) {
+      message.error("Please log in to continue");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await createBooking({
+        userId: userId,
+        showtimeId: booking.showtimeId,
+        seatReservationIds: booking.selectedSeats,
+        idempotencyKey: uuidv4(),
+        currency: "VND",
+      });
+
+      updateBooking({ 
+        movieId: movie.id, 
+        movieTitle: movie.title,
+        cinemaName: selectedCinema?.name,
+        showtimeTime: selectedShowtime?.time,
+        totalPrice: response.totalAmount 
+      });
+      navigate(`/checkout/${response.id}`);
+    } catch (error: any) {
+      message.error(error.message || "Failed to create booking. Seats might be taken.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleDateChange = (date: string) => {
@@ -374,181 +408,155 @@ const Booking: FC = () => {
 
   const renderStep0 = () => (
     <div className="steps-container booking-step">
-      <Row gutter={[24, 24]}>
-        <Col xs={24} lg={16}>
-          <Space direction="vertical" size="large" style={{ width: "100%" }}>
-            <div>
-              <Text strong className="booking-section-title">
-                Choose a date
-              </Text>
-              <DateTabs
-                options={dateOptions}
-                value={booking.date}
-                onChange={handleDateChange}
-              />
-            </div>
+      <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        <div>
+          <Text strong className="booking-section-title">
+            Choose a date
+          </Text>
+          <DateTabs
+            options={dateOptions}
+            value={booking.date}
+            onChange={handleDateChange}
+          />
+        </div>
 
-            <div>
-              <div className="booking-section-header">
-                <Text strong className="booking-section-title">
-                  Showtimes
-                </Text>
-                <Text type="secondary">
-                  Pick a cinema and time to continue.
-                </Text>
-              </div>
-
-              {isLoading || showtimesLoading ? (
-                <ShowtimeSkeleton />
-              ) : cinemaGroups.length === 0 ? (
-                <EmptyShowtimeState
-                  suggestedDate={suggestedDate}
-                  onSelectDate={suggestedDate ? handleDateChange : undefined}
-                />
-              ) : (
-                <Space
-                  direction="vertical"
-                  size="large"
-                  style={{ width: "100%" }}
-                >
-                  {cinemaGroups.map((group) => (
-                    <CinemaShowtimeGroup
-                      key={group.cinema.id}
-                      cinema={group.cinema}
-                      showtimes={group.showtimes}
-                      selectedShowtimeId={booking.showtimeId}
-                      onSelectShowtime={handleShowtimeSelect}
-                    />
-                  ))}
-                </Space>
-              )}
-            </div>
-          </Space>
-        </Col>
-        <Col xs={24} lg={8}>
-          <div className="booking-summary">
-            <Card className="booking-summary-card">
-              <Text strong className="booking-summary-title">
-                Booking Summary
-              </Text>
-              <Divider />
-              {selectedCinema && selectedShowtime ? (
-                <Space
-                  direction="vertical"
-                  size="middle"
-                  style={{ width: "100%" }}
-                >
-                  <div>
-                    <Text type="secondary">Cinema</Text>
-                    <div className="booking-summary-value">
-                      {selectedCinema.name}
-                    </div>
-                  </div>
-                  <div>
-                    <Text type="secondary">Date</Text>
-                    <div className="booking-summary-value">
-                      {dayjs(booking.date).format("DD/MM/YYYY")}
-                    </div>
-                  </div>
-                  <div>
-                    <Text type="secondary">Showtime</Text>
-                    <div className="booking-summary-value">
-                      {selectedShowtime.time}
-                    </div>
-                  </div>
-                  <div>
-                    <Text type="secondary">Price</Text>
-                    <div className="booking-summary-price">
-                      {selectedShowtime.price.toLocaleString()} VND
-                    </div>
-                  </div>
-                </Space>
-              ) : (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="Select a showtime to continue"
-                />
-              )}
-            </Card>
+        <div>
+          <div className="booking-section-header">
+            <Text strong className="booking-section-title">
+              Showtimes
+            </Text>
+            <Text type="secondary">
+              Pick a cinema and time to continue.
+            </Text>
           </div>
-        </Col>
-      </Row>
+
+          {isLoading || showtimesLoading || detailsLoading ? (
+            <ShowtimeSkeleton />
+          ) : cinemaGroups.length === 0 ? (
+            <EmptyShowtimeState
+              suggestedDate={suggestedDate}
+              onSelectDate={suggestedDate ? handleDateChange : undefined}
+            />
+          ) : (
+            <Space
+              direction="vertical"
+              size="large"
+              style={{ width: "100%" }}
+            >
+              {cinemaGroups.map((group) => (
+                <CinemaShowtimeGroup
+                  key={group.cinema.id}
+                  cinema={group.cinema}
+                  showtimes={group.showtimes}
+                  selectedShowtimeId={booking.showtimeId}
+                  onSelectShowtime={handleShowtimeSelect}
+                />
+              ))}
+            </Space>
+          )}
+        </div>
+      </Space>
     </div>
   );
 
-  const renderStep1 = () => (
-    <div className="steps-container">
-      <Title level={4}>Select Your Seats</Title>
-      <Text type="secondary">Click on available seats to select them</Text>
+  const renderStep1 = () => {
+    const rows = Array.from(
+      apiSeats.reduce((acc, seat) => {
+        if (!acc.has(seat.rowLabel)) acc.set(seat.rowLabel, []);
+        acc.get(seat.rowLabel)!.push(seat);
+        return acc;
+      }, new Map<string, typeof apiSeats>()).entries()
+    )
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([rowLabel, seats]) => ({
+        rowLabel,
+        seats: seats.sort((a, b) => a.seatNumber - b.seatNumber)
+      }));
 
-      <div style={{ marginTop: "24px" }}>
-        <div
-          style={{ textAlign: "center", marginBottom: "24px", fontWeight: 600 }}
-        >
-          SCREEN
-        </div>
+    return (
+      <div className="steps-container">
+        <Title level={4}>Select Your Seats</Title>
+        <Text type="secondary">Click on available seats to select them</Text>
 
-        <div className="seat-grid">
-          {Array.from({ length: 60 }).map((_, i) => {
-            const row = String.fromCharCode(65 + Math.floor(i / 10));
-            const number = (i % 10) + 1;
-            const seatId = `${row}${number}`;
-            const isSelected = booking.selectedSeats.includes(seatId);
-            const isBooked = Math.random() > 0.7;
+        <div style={{ marginTop: "24px" }}>
+          <div style={{ textAlign: "center", marginBottom: "24px", fontWeight: 600 }}>
+            SCREEN
+          </div>
 
-            return (
-              <div
-                key={seatId}
-                className={`seat ${isBooked ? "booked" : isSelected ? "selected" : "available"}`}
-                onClick={() => {
-                  if (!isBooked) {
-                    const newSeats = isSelected
-                      ? booking.selectedSeats.filter((s) => s !== seatId)
-                      : [...booking.selectedSeats, seatId];
-                    const newPrice =
-                      newSeats.length * (selectedShowtime?.price || 120000);
-                    updateBooking({
-                      selectedSeats: newSeats,
-                      totalPrice: newPrice,
-                    });
-                  }
-                }}
-              >
-                {number}
+          {seatsLoading ? (
+            <div style={{ textAlign: "center", padding: "40px" }}>
+              <Spin />
+            </div>
+          ) : (
+            <div className="seat-map" style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', overflowX: 'auto', paddingBottom: '16px' }}>
+              {rows.map(({ rowLabel, seats }) => (
+                <div key={rowLabel} style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div style={{ width: '20px', fontWeight: 'bold', textAlign: 'right', color: '#666' }}>{rowLabel}</div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {seats.map((seat) => {
+                      const isSelected = booking.selectedSeats.includes(seat.seatReservationId);
+                      const isBooked = seat.status !== "AVAILABLE";
+                      const seatPrice = Number(seat.price);
+
+                      return (
+                        <div
+                          key={seat.seatReservationId}
+                          className={`seat ${isBooked ? "booked" : isSelected ? "selected" : "available"}`}
+                          title={`${seat.seatName} - ${seatPrice.toLocaleString()} VND`}
+                          onClick={() => {
+                            if (!isBooked) {
+                              const newSeats = isSelected
+                                ? booking.selectedSeats.filter((s) => s !== seat.seatReservationId)
+                                : [...booking.selectedSeats, seat.seatReservationId];
+                              
+                              const newPrice = newSeats.reduce((total, id) => {
+                                const s = apiSeats.find(x => x.seatReservationId === id);
+                                const sPrice = s ? Number(s.price) : 0;
+                                return total + sPrice;
+                              }, 0);
+
+                              updateBooking({
+                                selectedSeats: newSeats,
+                                totalPrice: newPrice,
+                              });
+                            }
+                          }}
+                        >
+                          {seat.seatNumber}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ width: '20px', fontWeight: 'bold', textAlign: 'left', color: '#666' }}>{rowLabel}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Row gutter={[16, 16]} style={{ marginTop: "24px", justifyContent: "center" }}>
+            <Col>
+              <div style={{ fontSize: "12px", display: 'flex', alignItems: 'center' }}>
+                <span className="seat available" style={{ marginRight: "8px", width: '24px', height: '24px' }}></span>
+                Available
               </div>
-            );
-          })}
+            </Col>
+            <Col>
+              <div style={{ fontSize: "12px", display: 'flex', alignItems: 'center' }}>
+                <span className="seat selected" style={{ marginRight: "8px", width: '24px', height: '24px' }}></span>
+                Selected
+              </div>
+            </Col>
+            <Col>
+              <div style={{ fontSize: "12px", display: 'flex', alignItems: 'center' }}>
+                <span className="seat booked" style={{ marginRight: "8px", width: '24px', height: '24px' }}></span>
+                Booked
+              </div>
+            </Col>
+          </Row>
         </div>
-
-        <Row gutter={[16, 16]} style={{ marginTop: "24px" }}>
-          <Col xs={8}>
-            <div style={{ fontSize: "12px" }}>
-              <span className="seat available" style={{ marginRight: "8px" }}>
-                A
-              </span>
-              Available
-            </div>
-          </Col>
-          <Col xs={8}>
-            <div style={{ fontSize: "12px" }}>
-              <span className="seat selected" style={{ marginRight: "8px" }}>
-                A
-              </span>
-              Selected
-            </div>
-          </Col>
-          <Col xs={8}>
-            <div style={{ fontSize: "12px" }}>
-              <span className="seat booked" style={{ marginRight: "8px" }}>
-                A
-              </span>
-              Booked
-            </div>
-          </Col>
-        </Row>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderStep2 = () => (
     <div className="steps-container">
@@ -577,7 +585,10 @@ const Booking: FC = () => {
           <Col xs={12}>
             <Text strong>Seats:</Text>
             <div style={{ marginTop: "4px" }}>
-              {booking.selectedSeats.sort().join(", ")}
+              {booking.selectedSeats
+                 .map(id => apiSeats.find(s => s.seatReservationId === id)?.seatName || id)
+                 .sort()
+                 .join(", ")}
             </div>
           </Col>
         </Row>
@@ -631,38 +642,86 @@ const Booking: FC = () => {
           </div>
         </div>
 
-        <div>{steps[current].content}</div>
+        <Row gutter={[24, 24]}>
+          <Col xs={24} lg={16}>
+            <div>{steps[current].content}</div>
 
-        <Row
-          gutter={[16, 16]}
-          style={{ marginTop: "32px", justifyContent: "center" }}
-        >
-          {current > 0 && (
-            <Col xs={12} sm={4}>
-              <Button block onClick={handlePrev}>
-                Previous
-              </Button>
-            </Col>
-          )}
-          {current < steps.length - 1 && (
-            <Col xs={12} sm={4}>
-              <Button type="primary" block onClick={handleNext}>
-                Next
-              </Button>
-            </Col>
-          )}
-          {current === steps.length - 1 && (
-            <Col xs={12} sm={4}>
-              <Button
-                type="primary"
-                block
-                size="large"
-                onClick={handleCheckout}
-              >
-                Proceed to Payment
-              </Button>
-            </Col>
-          )}
+            <Row gutter={[16, 16]} style={{ marginTop: "32px", justifyContent: "center" }}>
+              {current > 0 && (
+                <Col xs={12} sm={6}>
+                  <Button block onClick={handlePrev}>
+                    Previous
+                  </Button>
+                </Col>
+              )}
+              {current < steps.length - 1 && (
+                <Col xs={12} sm={6}>
+                  <Button type="primary" block onClick={handleNext}>
+                    Next
+                  </Button>
+                </Col>
+              )}
+              {current === steps.length - 1 && (
+                <Col xs={12} sm={8}>
+                  <Button type="primary" block size="large" onClick={handleCheckout} loading={isLoading}>
+                    Proceed to Payment
+                  </Button>
+                </Col>
+              )}
+            </Row>
+          </Col>
+          
+          <Col xs={24} lg={8}>
+            <div className="booking-summary">
+              <Card className="booking-summary-card">
+                <Text strong className="booking-summary-title">
+                  Booking Summary
+                </Text>
+                <Divider style={{ margin: '12px 0' }} />
+                {selectedCinema && selectedShowtime ? (
+                  <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                    <div>
+                      <Text type="secondary">Movie</Text>
+                      <div className="booking-summary-value">{movie.title}</div>
+                    </div>
+                    <div>
+                      <Text type="secondary">Cinema</Text>
+                      <div className="booking-summary-value">{selectedCinema.name}</div>
+                    </div>
+                    <div>
+                      <Text type="secondary">Date</Text>
+                      <div className="booking-summary-value">
+                        {dayjs(booking.date).format("DD/MM/YYYY")}
+                      </div>
+                    </div>
+                    <div>
+                      <Text type="secondary">Showtime</Text>
+                      <div className="booking-summary-value">{selectedShowtime.time}</div>
+                    </div>
+                    {booking.selectedSeats.length > 0 && (
+                      <div>
+                        <Text type="secondary">Seats</Text>
+                        <div className="booking-summary-value">
+                          {booking.selectedSeats
+                            .map(id => apiSeats.find(s => s.seatReservationId === id)?.seatName || id)
+                            .sort()
+                            .join(", ")}
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <Text type="secondary">Total Price</Text>
+                      <div className="booking-summary-price">
+                        {booking.totalPrice.toLocaleString()} VND
+                      </div>
+                    </div>
+                  </Space>
+                ) : (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Select a showtime to continue" />
+                )}
+              </Card>
+            </div>
+          </Col>
         </Row>
       </Card>
     </div>

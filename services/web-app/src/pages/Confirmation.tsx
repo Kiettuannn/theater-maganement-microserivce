@@ -14,6 +14,7 @@ import {
 } from 'antd';
 import { CheckCircleOutlined, PrinterOutlined, DownloadOutlined } from '@ant-design/icons';
 import { getMovieById, getCinemaById, getShowtimesByMovieId } from '../lib/mock-data';
+import { getTicketsByBooking, type Ticket } from '../services/booking';
 import dayjs from 'dayjs';
 import '../styles/App.css';
 
@@ -35,18 +36,23 @@ interface BookingData {
 }
 
 const Confirmation: FC = () => {
-  const { orderId } = useParams<{ orderId: string }>();
+  const { bookingId } = useParams<{ bookingId: string }>();
   const navigate = useNavigate();
   const [booking, setBooking] = useState<BookingData | null>(null);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
 
   useEffect(() => {
-    if (orderId) {
-      const saved = localStorage.getItem(`booking-${orderId}`);
+    if (bookingId) {
+      const saved = localStorage.getItem(`booking-${bookingId}`);
       if (saved) {
         setBooking(JSON.parse(saved));
       }
+
+      getTicketsByBooking(bookingId)
+        .then(setTickets)
+        .catch(() => console.error("Failed to fetch tickets"));
     }
-  }, [orderId]);
+  }, [bookingId]);
 
   if (!booking) {
     return (
@@ -115,16 +121,16 @@ const Confirmation: FC = () => {
                 <Card style={{ backgroundColor: '#E6F2FF', borderColor: '#0052A3' }}>
                   <Row gutter={[16, 16]}>
                     <Col xs={24}>
-                      <Text type="secondary">Order ID</Text>
+                      <Text type="secondary">Booking ID</Text>
                       <Title level={4} style={{ margin: '0' }}>
-                        {booking.orderId}
+                        {bookingId}
                       </Title>
                     </Col>
 
                     <Col xs={24}>
                       <QRCode
                         value={JSON.stringify({
-                          orderId: booking.orderId,
+                          bookingId: bookingId,
                           movie: movie?.title,
                           date: booking.date,
                           seats: booking.selectedSeats,
@@ -202,6 +208,21 @@ const Confirmation: FC = () => {
                         </div>
                       </Col>
                     </Row>
+                    
+                    {tickets.length > 0 && (
+                      <Row>
+                        <Col xs={24}>
+                          <Text type="secondary">Ticket Codes</Text>
+                          <div style={{ fontWeight: 600, marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {tickets.map(t => (
+                              <span key={t.id} style={{ background: '#f0f2f5', padding: '2px 8px', borderRadius: '4px', border: '1px solid #d9d9d9' }}>
+                                {t.ticketCode}
+                              </span>
+                            ))}
+                          </div>
+                        </Col>
+                      </Row>
+                    )}
                   </Space>
                 </div>
 

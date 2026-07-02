@@ -15,26 +15,55 @@ import {
   Typography,
   Empty,
 } from 'antd';
+import { useParams } from 'react-router-dom';
 import { getMovieById, getCinemaById, getShowtimesByMovieId } from '../lib/mock-data';
 import { useBooking } from '../hooks/useBooking';
+import { getBookingSummary, confirmBooking, type BookingSummary } from '../services/booking';
 import dayjs from 'dayjs';
 import '../styles/App.css';
+import { useEffect } from 'react';
 
 const { Title, Text } = Typography;
 
 const Checkout: FC = () => {
+  const { bookingId } = useParams<{ bookingId: string }>();
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const { booking, resetBooking } = useBooking();
   const [paymentMethod, setPaymentMethod] = useState<string>('credit-card');
   const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState<BookingSummary | null>(null);
+  const [timeLeft, setTimeLeft] = useState<string>('');
 
-  const movie = booking.movieId ? getMovieById(booking.movieId) : null;
-  const cinema = booking.cinemaId ? getCinemaById(booking.cinemaId) : null;
-  const showtimes = booking.movieId ? getShowtimesByMovieId(booking.movieId) : [];
-  const showtime = showtimes.find((s) => s.id === booking.showtimeId);
+  useEffect(() => {
+    if (bookingId) {
+      getBookingSummary(bookingId)
+        .then(setSummary)
+        .catch(() => message.error("Failed to load booking details"));
+    }
+  }, [bookingId]);
 
-  if (!booking.movieId || !movie) {
+  useEffect(() => {
+    if (!summary?.expiresAt) return;
+
+    const interval = setInterval(() => {
+      const diff = dayjs(summary.expiresAt).diff(dayjs());
+      if (diff <= 0) {
+        clearInterval(interval);
+        setTimeLeft("00:00");
+        message.warning("Booking expired!");
+        navigate('/');
+      } else {
+        const minutes = Math.floor(diff / 60000);
+        const seconds = Math.floor((diff % 60000) / 1000);
+        setTimeLeft(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [summary, navigate]);
+
+  if (!bookingId || !booking.movieId || !booking.movieTitle) {
     return (
       <div className="page-container">
         <Empty
@@ -55,25 +84,23 @@ const Checkout: FC = () => {
       // Simulate payment processing
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      const orderId = `ORD-${Date.now()}`;
-      localStorage.setItem(
-        `booking-${orderId}`,
-        JSON.stringify({
-          ...booking,
-          orderId,
-          customerName: values.firstName + ' ' + values.lastName,
-          customerEmail: values.email,
-          customerPhone: values.phone,
-          paymentMethod,
-          paymentDate: new Date().toISOString(),
-        })
-      );
+      await confirmBooking(bookingId);
+
+      // Save local details so Confirmation page can render movie/cinema info
+      localStorage.setItem(`booking-${bookingId}`, JSON.stringify({
+        ...booking,
+        customerName: values.firstName + ' ' + values.lastName,
+        customerEmail: values.email,
+        customerPhone: values.phone,
+        paymentMethod,
+        paymentDate: new Date().toISOString(),
+      }));
 
       message.success('Payment successful!');
       resetBooking();
-      navigate(`/confirmation/${orderId}`);
-    } catch (error) {
-      message.error('Payment failed. Please try again.');
+      navigate(`/confirmation/${bookingId}`);
+    } catch (error: any) {
+      message.error(error.message || 'Payment failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -92,9 +119,17 @@ const Checkout: FC = () => {
       <Row gutter={[32, 32]}>
         <Col xs={24} md={14}>
           <Card>
-            <Title level={3} style={{ color: '#0052A3' }}>
-              Payment Details
-            </Title>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Title level={3} style={{ color: '#0052A3', margin: 0 }}>
+                Payment Details
+              </Title>
+              {timeLeft && (
+                <div style={{ background: '#FFF1F0', border: '1px solid #FFA39E', padding: '4px 12px', borderRadius: '4px', color: '#CF1322', fontWeight: 'bold' }}>
+                  Expires in: {timeLeft}
+                </div>
+              )}
+            </div>
+            <Divider />
 
             <Form form={form} layout="vertical" onFinish={handleSubmit}>
               <Form.Item
@@ -201,8 +236,9 @@ const Checkout: FC = () => {
                 htmlType="submit"
                 loading={loading}
                 style={{ marginTop: '24px' }}
+                disabled={!summary}
               >
-                {loading ? 'Processing...' : `Pay ${booking.totalPrice.toLocaleString()} VND`}
+                {loading ? 'Processing...' : `Pay ${(summary?.totalAmount || booking.totalPrice).toLocaleString()} VND`}
               </Button>
             </Form>
           </Card>
@@ -213,18 +249,18 @@ const Checkout: FC = () => {
             <Space direction="vertical" style={{ width: '100%' }} size="large">
               <div>
                 <Text type="secondary">Movie</Text>
-                <div style={{ fontWeight: 600, marginTop: '4px' }}>{movie.title}</div>
+                <div style={{ fontWeight: 600, marginTop: '4px' }}>{booking.movieTitle}</div>
               </div>
 
               <div>
                 <Text type="secondary">Cinema</Text>
-                <div style={{ fontWeight: 600, marginTop: '4px' }}>{cinema?.name}</div>
+                <div style={{ fontWeight: 600, marginTop: '4px' }}>{booking.cinemaName}</div>
               </div>
 
               <div>
                 <Text type="secondary">Date & Time</Text>
                 <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                  {dayjs(booking.date).format('DD/MM/YYYY')} at {showtime?.time}
+                  {dayjs(booking.date).format('DD/MM/YYYY')} at {booking.showtimeTime}
                 </div>
               </div>
 
@@ -259,7 +295,7 @@ const Checkout: FC = () => {
               <Row justify="space-between" style={{ fontSize: '18px' }}>
                 <Text strong>Total:</Text>
                 <Text strong style={{ color: '#0052A3' }}>
-                  {booking.totalPrice.toLocaleString()} VND
+                  {(summary?.totalAmount || booking.totalPrice).toLocaleString()} VND
                 </Text>
               </Row>
             </Space>

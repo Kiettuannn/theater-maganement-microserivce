@@ -14,6 +14,14 @@ export const API = {
   MOVIES_COMING_SOON: "catalog/movies/coming-soon",
   MOVIE_BY_ID: (id: string) => `catalog/movies/${id}`,
   SHOWTIMES_BY_MOVIE: (id: string) => `catalog/showtimes/movie/${id}`,
+
+  SEAT_RESERVATIONS_BY_SHOWTIME: (showtimeId: string) => `booking/seat-reservations/${showtimeId}`,
+  AVAILABLE_SEATS: `booking/seat-reservations`,
+
+  CREATE_BOOKING: "booking/bookings",
+  CONFIRM_BOOKING: (bookingId: string) => `booking/bookings/${bookingId}/confirm`,
+  BOOKING_SUMMARY: (bookingId: string) => `booking/bookings/${bookingId}/summary`,
+  TICKETS_BY_BOOKING: (bookingId: string) => `booking/tickets/by-booking/${bookingId}`,
 }
 
 
