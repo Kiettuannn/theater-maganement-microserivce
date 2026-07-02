@@ -1,43 +1,46 @@
 package com.theater_mgnt.microserivce.notification.service;
 
-
-import com.theater_mgnt.microserivce.notification.dto.request.EmailRequest;
-import com.theater_mgnt.microserivce.notification.dto.request.SendEmailRequest;
-import com.theater_mgnt.microserivce.notification.dto.request.Sender;
-import com.theater_mgnt.microserivce.notification.dto.response.EmailResponse;
-import com.theater_mgnt.microserivce.notification.exception.AppException;
-import com.theater_mgnt.microserivce.notification.exception.ErrorCode;
-import com.theater_mgnt.microserivce.notification.repository.httpClient.EmailClient;
+import com.theater_mgnt.microserivce.notification.dto.EmailRequest;
+import com.theater_mgnt.microserivce.notification.httpClient.EmailClient;
+import feign.FeignException;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@FieldDefaults(level = AccessLevel.PRIVATE,makeFinal = true)
+@FieldDefaults(level = AccessLevel.PRIVATE)
 public class EmailService {
-    EmailClient emailClient;
 
-    String apiKey = "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";
+    final EmailClient emailClient;
 
+    @Value("${brevo.apiKey}")
+    String apiKey;
 
-    public EmailResponse sendEmail(SendEmailRequest request){
-        EmailRequest emailRequest = EmailRequest.builder()
-                .sender(Sender.builder()
-                        .name("KietKoLat")
-                        .email("theonlytruth25012005@gmail.com")
-                        .build())
-                .to(List.of(request.getTo()))
-                .subject(request.getSubject())
-                .htmlContent(request.getHtmlContent())
-                .build();
-        try{
-            return emailClient.sendEmail(apiKey, emailRequest);
-        }catch (Exception e){
-            throw new AppException(ErrorCode.CANNOT_SEND_EMAIL);
+    @Value("${brevo.sender.email}")
+    String senderEmail;
+
+    @Value("${brevo.sender.name}")
+    String senderName;
+
+    public void sendEmail(EmailRequest emailRequest) {
+        if (emailRequest.getSender() == null) {
+            emailRequest.setSender(new EmailRequest.Sender(senderName, senderEmail));
+        }
+
+        try {
+            emailClient.sendEmail(apiKey, emailRequest);
+            log.info("Email sent successfully to {}", emailRequest.getTo());
+        } catch (FeignException e) {
+            log.error("Failed to send email via Brevo. Status: {}, Body: {}", e.status(), e.contentUTF8());
+            throw new RuntimeException("EMAIL_SEND_FAILED");
+        } catch (Exception e) {
+            log.error("Unknown error while sending email", e);
+            throw new RuntimeException("EMAIL_SEND_FAILED");
         }
     }
 }

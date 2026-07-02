@@ -75,6 +75,24 @@ services:
 
     networks:
       - microservices-network
+  notification-db:
+    image: postgres:16
+    container_name: notification-db
+    restart: always
+
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - notification_postgres_data:/var/lib/postgresql/data
+
+    networks:
+      - microservices-network
 
   redis:
     image: redis:7
@@ -126,13 +144,12 @@ services:
     networks:
       - microservices-network
 
-
 volumes:
   identity_mysql_data:
   booking_postgres_data:
   catalog_postgres_data:
   payment_postgres_data:
-
+  notification_postgres_data:
 
 networks:
   microservices-network:
