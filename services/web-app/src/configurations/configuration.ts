@@ -13,6 +13,7 @@ export const API = {
   MOVIES_NOW_SHOWING: "catalog/movies/now-showing",
   MOVIES_COMING_SOON: "catalog/movies/coming-soon",
   MOVIE_BY_ID: (id: string) => `catalog/movies/${id}`,
+  SHOWTIMES_BY_MOVIE: (id: string) => `catalog/showtimes/movie/${id}`,
 }
 
 

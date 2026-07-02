@@ -24,6 +24,7 @@ import {
   type Showtime,
 } from "../lib/mock-data";
 import { useMovieDetail } from "../hooks/useMovies";
+import { useShowtimesByMovie } from "../hooks/useShowtimes";
 import { useBooking } from "../hooks/useBooking";
 import "../styles/App.css";
 
@@ -186,10 +187,21 @@ const Booking: FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   const { movie, loading: movieLoading } = useMovieDetail(movieId);
-  const showtimes = useMemo(
-    () => (movieId ? getShowtimesByMovieId(movieId) : []),
-    [movieId],
-  );
+  const { showtimes: apiShowtimes, loading: showtimesLoading } = useShowtimesByMovie(movieId);
+
+  const showtimes = useMemo(() => {
+    if (!apiShowtimes) return [];
+    return apiShowtimes.map((st) => ({
+      id: st.id,
+      movieId: st.movieId,
+      cinemaId: st.roomId,
+      time: dayjs(st.startTime).format("HH:mm"),
+      date: dayjs(st.startTime).format("YYYY-MM-DD"),
+      availableSeats: 60,
+      price: 120000,
+      cinemaName: st.roomName,
+    })) as (Showtime & { cinemaName?: string })[];
+  }, [apiShowtimes]);
 
   const availableDates = useMemo(() => {
     const uniqueDates = new Set(showtimes.map((s) => s.date));
@@ -230,18 +242,22 @@ const Booking: FC = () => {
   );
 
   const cinemaGroups = useMemo<CinemaGroup[]>(() => {
-    const grouped = new Map<string, Showtime[]>();
+    const grouped = new Map<string, (Showtime & { cinemaName?: string })[]>();
     sortedShowtimesForDate.forEach((showtime) => {
       if (!grouped.has(showtime.cinemaId)) grouped.set(showtime.cinemaId, []);
       grouped.get(showtime.cinemaId)?.push(showtime);
     });
     return Array.from(grouped.entries())
       .map(([cinemaId, times]) => {
-        const cinema = getCinemaById(cinemaId);
-        if (!cinema) return null;
+        const mockCinema = getCinemaById(cinemaId);
+        const cinema = mockCinema || {
+          id: cinemaId,
+          name: times[0].cinemaName || "Cinema",
+          city: "",
+          address: "Room " + (times[0].cinemaName || ""),
+        };
         return { cinema, showtimes: times };
-      })
-      .filter((group): group is CinemaGroup => Boolean(group));
+      });
   }, [sortedShowtimesForDate]);
 
   useEffect(() => {
@@ -321,7 +337,9 @@ const Booking: FC = () => {
   }
 
   const selectedShowtime = showtimes.find((s) => s.id === booking.showtimeId);
-  const selectedCinema = booking.cinemaId ? getCinemaById(booking.cinemaId) : null;
+  const selectedCinema = booking.cinemaId 
+    ? (getCinemaById(booking.cinemaId) || { name: showtimes.find(s => s.cinemaId === booking.cinemaId)?.cinemaName || "Cinema" })
+    : null;
   const suggestedDate = availableDates.find((date) => date !== booking.date) || null;
 
   const handleNext = () => {
@@ -380,7 +398,7 @@ const Booking: FC = () => {
                 </Text>
               </div>
 
-              {isLoading ? (
+              {isLoading || showtimesLoading ? (
                 <ShowtimeSkeleton />
               ) : cinemaGroups.length === 0 ? (
                 <EmptyShowtimeState

@@ -12,7 +12,7 @@ import theater_mgnt.microserivce.catalog.seatType.entity.SeatType;
 
 @Generated(
     value = "org.mapstruct.ap.MappingProcessor",
-    date = "2026-06-29T10:48:20+0700",
+    date = "2026-07-02T09:29:05+0700",
     comments = "version: 1.5.5.Final, compiler: javac, environment: Java 21.0.7 (Oracle Corporation)"
 )
 @Component

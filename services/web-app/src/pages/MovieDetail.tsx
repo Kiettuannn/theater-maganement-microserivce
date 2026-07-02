@@ -12,6 +12,9 @@ import {
   Space,
   Spin,
 } from "antd";
+import { useState } from "react";
+import { selectIsAuthenticated, useAuthStore } from "../stores";
+import LoginModal from "../components/LoginModal";
 import { useMovieDetail } from "../hooks/useMovies";
 import "../styles/App.css";
 
@@ -20,6 +23,13 @@ const MovieDetail: FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { movie, loading } = useMovieDetail(id);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const isSignedIn = useAuthStore(selectIsAuthenticated);
+
+  const handleLoginSuccess = () => {
+    setLoginOpen(false);
+    navigate(`/booking/${movie?.id}`);
+  };
 
   if (loading) {
     return (
@@ -75,7 +85,13 @@ const MovieDetail: FC = () => {
             size="large"
             block
             style={{ marginTop: "24px" }}
-            onClick={() => navigate(`/booking/${movie.id}`)}
+            onClick={() => {
+              if (isSignedIn) {
+                navigate(`/booking/${movie.id}`);
+              } else {
+                setLoginOpen(true);
+              }
+            }}
             disabled={isComingSoon}
           >
             {isComingSoon ? "Coming Soon" : "Book Tickets"}
@@ -128,6 +144,12 @@ const MovieDetail: FC = () => {
           </Space>
         </Col>
       </Row>
+
+      <LoginModal
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        onSuccess={handleLoginSuccess}
+      />
     </div>
   );
 };
