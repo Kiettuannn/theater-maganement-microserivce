@@ -1,11 +1,11 @@
 import { FC } from 'react';
 import { Row, Col } from 'antd';
 import MovieCard from './MovieCard';
-import type { Movie } from '../lib/mock-data';
+import type { MovieSimple } from '../services/movie';
 
 interface MovieGridProps {
-  movies: Movie[];
-  onMovieSelect?: (movie: Movie) => void;
+  movies: MovieSimple[];
+  onMovieSelect?: (movie: MovieSimple) => void;
 }
 
 const MovieGrid: FC<MovieGridProps> = ({ movies, onMovieSelect }) => {

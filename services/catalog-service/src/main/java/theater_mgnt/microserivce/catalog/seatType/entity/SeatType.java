@@ -22,7 +22,6 @@ import java.math.BigDecimal;
 @SQLDelete(sql = "UPDATE seatTypes SET deleted = true WHERE id = ?")
 @Where(clause = "deleted = false")
 public class SeatType extends BaseEntity {
-
     String typeName;
     BigDecimal basePriceModifier;
 }

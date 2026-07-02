@@ -29,10 +29,6 @@ public class GenreService {
     // CREATE
     public GenreResponse createGenre(CreateGenreRequest request) {
 
-        if (genreRepository.existsById(request.getId())) {
-            throw new AppException(ErrorCode.GENRE_EXISTED);
-        }
-
         if (genreRepository.findByName(request.getName()).isPresent()) {
             throw new AppException(ErrorCode.GENRE_NAME_EXISTED);
         }

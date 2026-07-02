@@ -6,20 +6,38 @@ import {
   Button,
   Card,
   Descriptions,
-  Rate,
   Tag,
   Image,
   Empty,
   Space,
+  Spin,
 } from "antd";
-import { getMovieById } from "../lib/mock-data";
+import { useState } from "react";
+import { selectIsAuthenticated, useAuthStore } from "../stores";
+import LoginModal from "../components/LoginModal";
+import { useMovieDetail } from "../hooks/useMovies";
 import "../styles/App.css";
 
 const MovieDetail: FC = () => {
   const fallbackImage = "/images/placeholder.svg";
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const movie = id ? getMovieById(id) : null;
+  const { movie, loading } = useMovieDetail(id);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const isSignedIn = useAuthStore(selectIsAuthenticated);
+
+  const handleLoginSuccess = () => {
+    setLoginOpen(false);
+    navigate(`/booking/${movie?.id}`);
+  };
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <Spin size="large" style={{ display: "block", textAlign: "center", marginTop: "60px" }} />
+      </div>
+    );
+  }
 
   if (!movie) {
     return (
@@ -37,6 +55,8 @@ const MovieDetail: FC = () => {
     );
   }
 
+  const isComingSoon = movie.status === "coming_soon";
+
   return (
     <div className="page-container">
       <Button
@@ -50,7 +70,7 @@ const MovieDetail: FC = () => {
       <Row gutter={[32, 32]}>
         <Col xs={24} sm={24} md={8}>
           <Image
-            src={movie.image}
+            src={movie.posterUrl}
             alt={movie.title}
             preview={true}
             style={{ borderRadius: "8px", width: "100%" }}
@@ -65,42 +85,29 @@ const MovieDetail: FC = () => {
             size="large"
             block
             style={{ marginTop: "24px" }}
-            onClick={() => navigate(`/booking/${movie.id}`)}
-            disabled={movie.status === "coming-soon"}
+            onClick={() => {
+              if (isSignedIn) {
+                navigate(`/booking/${movie.id}`);
+              } else {
+                setLoginOpen(true);
+              }
+            }}
+            disabled={isComingSoon}
           >
-            {movie.status === "coming-soon" ? "Coming Soon" : "Book Tickets"}
+            {isComingSoon ? "Coming Soon" : "Book Tickets"}
           </Button>
         </Col>
 
         <Col xs={24} sm={24} md={16}>
-          <h1
-            style={{ fontSize: "32px", color: "#0052A3", marginBottom: "16px" }}
-          >
+          <h1 style={{ fontSize: "32px", color: "#0052A3", marginBottom: "16px" }}>
             {movie.title}
           </h1>
 
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
             <div>
-              <Rate
-                disabled
-                value={movie.rating / 2}
-                style={{ fontSize: "18px" }}
-              />
-              <span
-                style={{ marginLeft: "12px", fontSize: "16px", color: "#666" }}
-              >
-                {movie.rating.toFixed(1)}/10
-              </span>
-            </div>
-
-            <div>
-              {movie.genre.map((g) => (
-                <Tag
-                  key={g}
-                  color="blue"
-                  style={{ marginRight: "8px", marginBottom: "8px" }}
-                >
-                  {g}
+              {movie.genres.map((g) => (
+                <Tag key={g.id} color="blue" style={{ marginRight: "8px", marginBottom: "8px" }}>
+                  {g.name}
                 </Tag>
               ))}
             </div>
@@ -108,41 +115,41 @@ const MovieDetail: FC = () => {
             <Descriptions
               column={1}
               items={[
-                {
-                  label: "Duration",
-                  children: `${movie.duration} minutes`,
-                },
+                { label: "Duration", children: `${movie.durationMinutes} minutes` },
                 {
                   label: "Release Date",
-                  children: new Date(movie.releaseDate).toLocaleDateString(
-                    "en-US",
-                    {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    },
-                  ),
+                  children: new Date(movie.releaseDate).toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  }),
                 },
+                ...(movie.director ? [{ label: "Director", children: movie.director }] : []),
+                ...(movie.castMembers ? [{ label: "Cast", children: movie.castMembers }] : []),
+                ...(movie.ageRating ? [{ label: "Age Rating", children: `${movie.ageRating.code} — ${movie.ageRating.description}` }] : []),
                 {
                   label: "Status",
-                  children:
-                    movie.status === "now-showing" ? (
-                      <Tag color="green">Now Showing</Tag>
-                    ) : (
-                      <Tag color="blue">Coming Soon</Tag>
-                    ),
+                  children: isComingSoon ? (
+                    <Tag color="blue">Coming Soon</Tag>
+                  ) : (
+                    <Tag color="green">Now Showing</Tag>
+                  ),
                 },
               ]}
             />
 
             <Card title="Synopsis">
-              <p style={{ lineHeight: 1.6, color: "#666" }}>
-                {movie.description}
-              </p>
+              <p style={{ lineHeight: 1.6, color: "#666" }}>{movie.description}</p>
             </Card>
           </Space>
         </Col>
       </Row>
+
+      <LoginModal
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        onSuccess={handleLoginSuccess}
+      />
     </div>
   );
 };

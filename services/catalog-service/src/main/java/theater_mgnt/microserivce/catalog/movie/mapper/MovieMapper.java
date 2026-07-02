@@ -5,7 +5,6 @@ import org.mapstruct.*;
 import theater_mgnt.microserivce.catalog.movie.dto.request.CreateMovieRequest;
 import theater_mgnt.microserivce.catalog.movie.dto.request.UpdateMovieRequest;
 import theater_mgnt.microserivce.catalog.movie.dto.response.MovieResponse;
-import theater_mgnt.microserivce.catalog.movie.dto.response.MovieSimpleResponse;
 import theater_mgnt.microserivce.catalog.movie.entity.AgeRating;
 import theater_mgnt.microserivce.catalog.movie.entity.Genre;
 import theater_mgnt.microserivce.catalog.movie.entity.Movie;
@@ -27,11 +26,5 @@ public interface MovieMapper {
 
     MovieResponse toMovieResponse(Movie movie);
 
-    @Mapping(source = "ageRating.code", target = "ageRatingCode")
-    MovieSimpleResponse toMovieSimpleResponse(Movie movie);
-
-    MovieResponse.AgeRatingInfo toAgeRatingInfo(AgeRating ageRating);
-
-    MovieResponse.GenreInfo toGenreInfo(Genre genre);
 }
 

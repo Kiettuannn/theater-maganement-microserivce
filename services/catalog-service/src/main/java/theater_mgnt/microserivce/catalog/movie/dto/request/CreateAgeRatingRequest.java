@@ -12,9 +12,6 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CreateAgeRatingRequest {
 
-    @Size(max = 50, message = "INVALID_AGERATING_ID")
-    String id;
-
     @Size(min = 1, max = 10, message = "INVALID_AGERATING_CODE")
     String code;
 

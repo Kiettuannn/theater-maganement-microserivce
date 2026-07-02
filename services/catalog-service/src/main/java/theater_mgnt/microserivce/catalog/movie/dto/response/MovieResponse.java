@@ -16,7 +16,6 @@ import theater_mgnt.microserivce.catalog.common.enums.MovieStatus;
 @AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class MovieResponse {
-
     String id;
     String title;
     String slug;
@@ -26,6 +25,7 @@ public class MovieResponse {
     String castMembers;
     String posterUrl;
     String trailerUrl;
+    Boolean needsArchiveWarning;
 
     @JsonFormat(pattern = "yyyy-MM-dd")
     LocalDate releaseDate;
@@ -36,34 +36,13 @@ public class MovieResponse {
     MovieStatus status;
 
     // Nested objects
-    AgeRatingInfo ageRating;
-    Set<GenreInfo> genres;
+    AgeRatingResponse ageRating;
+    Set<GenreResponse> genres;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     LocalDateTime createdAt;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     LocalDateTime updatedAt;
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @FieldDefaults(level = AccessLevel.PRIVATE)
-    public static class AgeRatingInfo {
-        String id;
-        String code;
-        String description;
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @FieldDefaults(level = AccessLevel.PRIVATE)
-    public static class GenreInfo {
-        String id;
-        String name;
-    }
 }
 

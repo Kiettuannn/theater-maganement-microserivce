@@ -10,14 +10,12 @@ import theater_mgnt.microserivce.catalog.movie.dto.request.CreateGenreRequest;
 import theater_mgnt.microserivce.catalog.movie.dto.response.GenreResponse;
 import theater_mgnt.microserivce.catalog.movie.entity.Genre;
 
-@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
+@Mapper(componentModel = "spring")
 public interface GenreMapper {
-    @Mapping(target = "movieCount", expression = "java(genre.getMovies() != null ? genre.getMovies().size() : 0)")
     GenreResponse toGenreResponse(Genre genre);
 
     List<GenreResponse> toGenreResponseList(List<Genre> genres);
 
-    @Mapping(target = "movies", ignore = true)
     Genre toGenre(CreateGenreRequest request);
 }
 

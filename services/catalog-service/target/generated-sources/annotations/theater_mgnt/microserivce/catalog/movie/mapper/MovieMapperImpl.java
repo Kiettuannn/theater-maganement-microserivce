@@ -6,16 +6,17 @@ import javax.annotation.processing.Generated;
 import org.springframework.stereotype.Component;
 import theater_mgnt.microserivce.catalog.movie.dto.request.CreateMovieRequest;
 import theater_mgnt.microserivce.catalog.movie.dto.request.UpdateMovieRequest;
+import theater_mgnt.microserivce.catalog.movie.dto.response.AgeRatingResponse;
+import theater_mgnt.microserivce.catalog.movie.dto.response.GenreResponse;
 import theater_mgnt.microserivce.catalog.movie.dto.response.MovieResponse;
-import theater_mgnt.microserivce.catalog.movie.dto.response.MovieSimpleResponse;
 import theater_mgnt.microserivce.catalog.movie.entity.AgeRating;
 import theater_mgnt.microserivce.catalog.movie.entity.Genre;
 import theater_mgnt.microserivce.catalog.movie.entity.Movie;
 
 @Generated(
     value = "org.mapstruct.ap.MappingProcessor",
-    date = "2026-06-24T17:35:10+0700",
-    comments = "version: 1.5.5.Final, compiler: javac, environment: Java 21.0.9 (Eclipse Adoptium)"
+    date = "2026-07-02T09:29:05+0700",
+    comments = "version: 1.5.5.Final, compiler: javac, environment: Java 21.0.7 (Oracle Corporation)"
 )
 @Component
 public class MovieMapperImpl implements MovieMapper {
@@ -100,115 +101,49 @@ public class MovieMapperImpl implements MovieMapper {
         movieResponse.setReleaseDate( movie.getReleaseDate() );
         movieResponse.setEndDate( movie.getEndDate() );
         movieResponse.setStatus( movie.getStatus() );
-        movieResponse.setAgeRating( toAgeRatingInfo( movie.getAgeRating() ) );
-        movieResponse.setGenres( genreSetToGenreInfoSet( movie.getGenres() ) );
+        movieResponse.setAgeRating( ageRatingToAgeRatingResponse( movie.getAgeRating() ) );
+        movieResponse.setGenres( genreSetToGenreResponseSet( movie.getGenres() ) );
         movieResponse.setCreatedAt( movie.getCreatedAt() );
         movieResponse.setUpdatedAt( movie.getUpdatedAt() );
 
         return movieResponse;
     }
 
-    @Override
-    public MovieSimpleResponse toMovieSimpleResponse(Movie movie) {
-        if ( movie == null ) {
-            return null;
-        }
-
-        MovieSimpleResponse movieSimpleResponse = new MovieSimpleResponse();
-
-        movieSimpleResponse.setAgeRatingCode( movieAgeRatingCode( movie ) );
-        movieSimpleResponse.setId( movie.getId() );
-        movieSimpleResponse.setTitle( movie.getTitle() );
-        movieSimpleResponse.setSlug( movie.getSlug() );
-        movieSimpleResponse.setPosterUrl( movie.getPosterUrl() );
-        movieSimpleResponse.setTrailerUrl( movie.getTrailerUrl() );
-        movieSimpleResponse.setDurationMinutes( movie.getDurationMinutes() );
-        movieSimpleResponse.setReleaseDate( movie.getReleaseDate() );
-        movieSimpleResponse.setStatus( movie.getStatus() );
-        movieSimpleResponse.setDirector( movie.getDirector() );
-        movieSimpleResponse.setGenres( genreSetToGenreInfoSet1( movie.getGenres() ) );
-
-        return movieSimpleResponse;
-    }
-
-    @Override
-    public MovieResponse.AgeRatingInfo toAgeRatingInfo(AgeRating ageRating) {
+    protected AgeRatingResponse ageRatingToAgeRatingResponse(AgeRating ageRating) {
         if ( ageRating == null ) {
             return null;
         }
 
-        MovieResponse.AgeRatingInfo ageRatingInfo = new MovieResponse.AgeRatingInfo();
+        AgeRatingResponse ageRatingResponse = new AgeRatingResponse();
 
-        ageRatingInfo.setId( ageRating.getId() );
-        ageRatingInfo.setCode( ageRating.getCode() );
-        ageRatingInfo.setDescription( ageRating.getDescription() );
+        ageRatingResponse.setId( ageRating.getId() );
+        ageRatingResponse.setCode( ageRating.getCode() );
+        ageRatingResponse.setDescription( ageRating.getDescription() );
 
-        return ageRatingInfo;
+        return ageRatingResponse;
     }
 
-    @Override
-    public MovieResponse.GenreInfo toGenreInfo(Genre genre) {
+    protected GenreResponse genreToGenreResponse(Genre genre) {
         if ( genre == null ) {
             return null;
         }
 
-        MovieResponse.GenreInfo genreInfo = new MovieResponse.GenreInfo();
+        GenreResponse genreResponse = new GenreResponse();
 
-        genreInfo.setId( genre.getId() );
-        genreInfo.setName( genre.getName() );
+        genreResponse.setId( genre.getId() );
+        genreResponse.setName( genre.getName() );
 
-        return genreInfo;
+        return genreResponse;
     }
 
-    protected Set<MovieResponse.GenreInfo> genreSetToGenreInfoSet(Set<Genre> set) {
+    protected Set<GenreResponse> genreSetToGenreResponseSet(Set<Genre> set) {
         if ( set == null ) {
             return null;
         }
 
-        Set<MovieResponse.GenreInfo> set1 = new LinkedHashSet<MovieResponse.GenreInfo>( Math.max( (int) ( set.size() / .75f ) + 1, 16 ) );
+        Set<GenreResponse> set1 = new LinkedHashSet<GenreResponse>( Math.max( (int) ( set.size() / .75f ) + 1, 16 ) );
         for ( Genre genre : set ) {
-            set1.add( toGenreInfo( genre ) );
-        }
-
-        return set1;
-    }
-
-    private String movieAgeRatingCode(Movie movie) {
-        if ( movie == null ) {
-            return null;
-        }
-        AgeRating ageRating = movie.getAgeRating();
-        if ( ageRating == null ) {
-            return null;
-        }
-        String code = ageRating.getCode();
-        if ( code == null ) {
-            return null;
-        }
-        return code;
-    }
-
-    protected MovieSimpleResponse.GenreInfo genreToGenreInfo(Genre genre) {
-        if ( genre == null ) {
-            return null;
-        }
-
-        MovieSimpleResponse.GenreInfo genreInfo = new MovieSimpleResponse.GenreInfo();
-
-        genreInfo.setId( genre.getId() );
-        genreInfo.setName( genre.getName() );
-
-        return genreInfo;
-    }
-
-    protected Set<MovieSimpleResponse.GenreInfo> genreSetToGenreInfoSet1(Set<Genre> set) {
-        if ( set == null ) {
-            return null;
-        }
-
-        Set<MovieSimpleResponse.GenreInfo> set1 = new LinkedHashSet<MovieSimpleResponse.GenreInfo>( Math.max( (int) ( set.size() / .75f ) + 1, 16 ) );
-        for ( Genre genre : set ) {
-            set1.add( genreToGenreInfo( genre ) );
+            set1.add( genreToGenreResponse( genre ) );
         }
 
         return set1;

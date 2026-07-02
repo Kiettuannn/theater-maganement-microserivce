@@ -12,11 +12,6 @@ import lombok.experimental.FieldDefaults;
 @AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class CreateGenreRequest {
-
-    @NotBlank(message = "GENRE_ID_REQUIRED")
-    @Size(max = 50, message = "INVALID_GENRE_ID")
-    String id;
-
     @NotBlank(message = "GENRE_NAME_REQUIRED")
     @Size(max = 100, message = "INVALID_GENRE_NAME")
     String name;

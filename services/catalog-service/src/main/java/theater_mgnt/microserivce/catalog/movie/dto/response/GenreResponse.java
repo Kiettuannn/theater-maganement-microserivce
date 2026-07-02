@@ -11,6 +11,5 @@ import lombok.experimental.FieldDefaults;
 public class GenreResponse {
     String id;
     String name;
-    Integer movieCount;
 }
 
