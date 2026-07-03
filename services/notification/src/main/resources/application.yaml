@@ -6,7 +6,7 @@ spring:
   application:
     name: notification-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/notification_db
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/notification_db
     username: root
     password: root
   jpa:
@@ -14,7 +14,7 @@ spring:
       ddl-auto: update
     show-sql: true
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_HOST:localhost:9092}
     consumer:
       group-id: notification-group
       auto-offset-reset: earliest
