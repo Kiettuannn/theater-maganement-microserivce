@@ -48,6 +48,6 @@ spring:
                   - StripPrefix=1
 
             - id: socket_io_service
-              uri: http://${NOTIFICATION_SERVICE_HOST:localhost}:9093
+              uri: ws://${NOTIFICATION_SERVICE_HOST:localhost}:9093
               predicates:
                 - Path=/socket.io/**

@@ -95,9 +95,13 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 //        log.info("API prefix: {}", apiPrefix);
 //        log.info("Public endpoint: {}", Arrays.toString(publicEndpoints));
 //        log.info("Request URI: {}", request.getURI().getPath());
+        String path = request.getURI().getPath();
+        if (path.startsWith("/socket.io")) {
+            return true;
+        }
 
         return Arrays.stream(publicEndpoints)
-                .anyMatch(s -> request.getURI().getPath().matches(apiPrefix + s));
+                .anyMatch(s -> path.matches(apiPrefix + s));
     }
 
     Mono<Void> unauthenticated(ServerHttpResponse response){
