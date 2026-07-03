@@ -18,17 +18,26 @@ import {
 } from "antd";
 import dayjs from "dayjs";
 import { v4 as uuidv4 } from "uuid";
-import { getShowtimesByMovieId, getCinemaById } from "../lib/mock-data";
+import { getShowtimesByMovieId, getCinemaById, Cinema } from "../lib/mock-data";
 import { useMovieDetail } from "../hooks/useMovies";
 import { useShowtimesByMovie } from "../hooks/useShowtimes";
 import { useBooking } from "../hooks/useBooking";
 import { useSeats, useShowtimeDetails } from "../hooks/useSeats";
 import { createBooking } from "../services/booking";
 import { useAuthStore } from "../stores/useAuthStore";
-import type { Showtime } from "../services/showtime";
+import type { Showtime as ApiShowtime } from "../services/showtime";
 import "../styles/App.css";
 
 const { Title, Text } = Typography;
+
+export type MappedShowtime = ApiShowtime & {
+  time: string;
+  date: string;
+  availableSeats: number;
+  price: number;
+  cinemaName?: string;
+  cinemaId: string;
+};
 
 type DateTabOption = {
   date: string;
@@ -39,7 +48,7 @@ type DateTabOption = {
 
 type CinemaGroup = {
   cinema: Cinema;
-  showtimes: Showtime[];
+  showtimes: MappedShowtime[];
 };
 
 const DateTabs: FC<{
@@ -72,9 +81,9 @@ const DateTabs: FC<{
 };
 
 const ShowtimeButton: FC<{
-  showtime: Showtime;
+  showtime: MappedShowtime;
   selected: boolean;
-  onSelect: (showtime: Showtime) => void;
+  onSelect: (showtime: MappedShowtime) => void;
 }> = ({ showtime, selected, onSelect }) => {
   const isSoldOut = showtime.availableSeats <= 0;
   const seatLabel = isSoldOut
@@ -105,9 +114,9 @@ const ShowtimeButton: FC<{
 
 const CinemaShowtimeGroup: FC<{
   cinema: Cinema;
-  showtimes: Showtime[];
+  showtimes: MappedShowtime[];
   selectedShowtimeId: string | null;
-  onSelectShowtime: (showtime: Showtime) => void;
+  onSelectShowtime: (showtime: MappedShowtime) => void;
 }> = ({ cinema, showtimes, selectedShowtimeId, onSelectShowtime }) => (
   <Card className="cinema-card">
     <div className="cinema-header">
@@ -195,15 +204,14 @@ const Booking: FC = () => {
   const showtimes = useMemo(() => {
     if (!apiShowtimes) return [];
     return apiShowtimes.map((st) => ({
-      id: st.id,
-      movieId: st.movieId,
+      ...st,
       cinemaId: st.roomId,
       time: dayjs(st.startTime).format("HH:mm"),
       date: dayjs(st.startTime).format("YYYY-MM-DD"),
       availableSeats: showtimeDetails[st.id]?.availableSeats || 0,
       price: showtimeDetails[st.id]?.price || 0,
       cinemaName: st.roomName,
-    })) as (Showtime & { cinemaName?: string })[];
+    })) as MappedShowtime[];
   }, [apiShowtimes, showtimeDetails]);
 
   const availableDates = useMemo(() => {
@@ -245,7 +253,7 @@ const Booking: FC = () => {
   );
 
   const cinemaGroups = useMemo<CinemaGroup[]>(() => {
-    const grouped = new Map<string, (Showtime & { cinemaName?: string })[]>();
+    const grouped = new Map<string, MappedShowtime[]>();
     sortedShowtimesForDate.forEach((showtime) => {
       if (!grouped.has(showtime.cinemaId)) grouped.set(showtime.cinemaId, []);
       grouped.get(showtime.cinemaId)?.push(showtime);
@@ -407,7 +415,7 @@ const Booking: FC = () => {
     updateBooking({ date, cinemaId: null, showtimeId: null, selectedSeats: [], totalPrice: 0 });
   };
 
-  const handleShowtimeSelect = (showtime: Showtime) => {
+  const handleShowtimeSelect = (showtime: MappedShowtime) => {
     updateBooking({ date: showtime.date, cinemaId: showtime.cinemaId, showtimeId: showtime.id, selectedSeats: [], totalPrice: 0 });
   };
 

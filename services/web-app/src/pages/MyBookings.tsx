@@ -99,7 +99,7 @@ const MyBookings: FC = () => {
     try {
       await cancelBooking(orderId);
       message.success("Booking cancelled successfully");
-      loadBookings();
+      loadBookings(currentPage);
     } catch (err) {
       message.error("Failed to cancel booking");
     }
@@ -212,7 +212,6 @@ const MyBookings: FC = () => {
               onChange: (page) => setCurrentPage(page),
               showTotal: (total) => `Total ${total} bookings`,
             }}
-            responsive
           />
         ) : (
           <Empty

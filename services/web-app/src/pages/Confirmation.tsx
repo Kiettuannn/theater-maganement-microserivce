@@ -41,6 +41,9 @@ interface BookingData {
   customerPhone: string;
   paymentMethod: string;
   paymentDate: string;
+  movieTitle?: string;
+  cinemaName?: string;
+  showtimeTime?: string;
 }
 
 const Confirmation: FC = () => {
