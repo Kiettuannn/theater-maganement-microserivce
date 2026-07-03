@@ -13,40 +13,35 @@ spring:
         webflux:
           routes:
             - id: identity_service
-              uri: http://localhost:8081
+              uri: http://${IDENTITY_SERVICE_HOST:localhost}:8081
               predicates:
                 - Path=${app.api-prefix}/identity/**
               filters:
                   - StripPrefix=1
+
             - id: notification_service
-              uri: http://localhost:8086
+              uri: http://${NOTIFICATION_SERVICE_HOST:localhost}:8086
               predicates:
                 - Path=${app.api-prefix}/notification/**
               filters:
                   - StripPrefix=1
-            - id: catalog_service
-              uri: http://localhost:8082
-              predicates:
-                - Path=${app.api-prefix}/catalog/**
-              filters:
-                  - StripPrefix=1
 
             - id: catalog_service
-              uri: http://localhost:8082
+              uri: http://${CATALOG_SERVICE_HOST:localhost}:8084
               predicates:
                 - Path=${app.api-prefix}/catalog/**
               filters:
                   - StripPrefix=1
 
             - id: booking_service
-              uri: http://localhost:8083
+              uri: http://${BOOKING_SERVICE_HOST:localhost}:8083
               predicates:
                 - Path=${app.api-prefix}/booking/**
               filters:
                   - StripPrefix=1
 
             - id: payment_service
-              uri: http://localhost:8085
+              uri: http://${PAYMENT_SERVICE_HOST:localhost}:8085
               predicates:
                 - Path=${app.api-prefix}/payment/**
               filters:

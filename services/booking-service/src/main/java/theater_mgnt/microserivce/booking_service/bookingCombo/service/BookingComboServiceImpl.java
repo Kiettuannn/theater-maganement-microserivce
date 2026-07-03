@@ -19,9 +19,13 @@ import theater_mgnt.microserivce.booking_service.common.exception.AppException;
 import theater_mgnt.microserivce.booking_service.common.exception.ErrorCode;
 import theater_mgnt.microserivce.booking_service.seatReservation.repository.SeatReservationRepository;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.SneakyThrows;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 @Service
 @Transactional
@@ -33,6 +37,10 @@ public class BookingComboServiceImpl implements BookingComboService {
     private final SeatReservationRepository seatReservationRepository;
     private final CatalogClient catalogClient;
     private final BookingPricingMapper bookingPricingMapper;
+    private final theater_mgnt.microserivce.booking_service.outbox.service.OutboxRelayService outboxRelayService;
+    private final ObjectMapper objectMapper;
+
+    private static final String TOPIC_COMBOS_UPDATED = "cinema.booking.combos-updated";
 
     @Override
     public BookingPricingResponse updateCombos(String bookingId, UpdateBookingCombosRequest request) {
@@ -75,7 +83,28 @@ public class BookingComboServiceImpl implements BookingComboService {
         booking.setTotalAmount(seatTotal.add(comboTotal));
         bookingRepository.save(booking);
 
+        // Publish combos-updated event so payment-service can sync invoice.totalAmount
+        outboxRelayService.save(
+                "Booking",
+                bookingId,
+                "booking.combos.updated",
+                buildCombosUpdatedPayload(bookingId, seatTotal.add(comboTotal)),
+                TOPIC_COMBOS_UPDATED,
+                booking.getShowtimeId());
+
         return bookingPricingMapper.toPricingResponse(booking);
+    }
+
+    @SneakyThrows
+    private String buildCombosUpdatedPayload(String bookingId, BigDecimal newTotal) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("bookingId", bookingId);
+        payload.put("totalAmount", newTotal);
+        Map<String, Object> wrapper = new HashMap<>();
+        wrapper.put("eventType", "BookingCombosUpdated");
+        wrapper.put("occurredAt", Instant.now().toString());
+        wrapper.put("payload", payload);
+        return objectMapper.writeValueAsString(wrapper);
     }
 
     @Override

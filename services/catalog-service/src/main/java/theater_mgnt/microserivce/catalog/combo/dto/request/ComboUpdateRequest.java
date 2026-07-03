@@ -1,6 +1,5 @@
 package theater_mgnt.microserivce.catalog.combo.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
@@ -15,15 +14,15 @@ import java.math.BigDecimal;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ComboUpdateRequest {
 
-    @Size(min = 3, message = "COMBO_NAME_INVALID")
+    @Size(min = 1, message = "COMBO_NAME_INVALID")
     String name;
 
-    @Size(min = 3, message = "COMBO_DESCRIPTION_INVALID")
+    @Size(min = 1, message = "COMBO_DESCRIPTION_INVALID")
     String description;
 
-    @NotNull
+    @NotNull(message = "COMBO_PRICE_REQUIRED")
     BigDecimal price;
 
-    @NotBlank
+    // imageUrl is optional — no @NotBlank
     String imageUrl;
 }
