@@ -20,6 +20,8 @@ import theater_mgnt.microserivce.booking_service.ticket.entity.Ticket;
 import theater_mgnt.microserivce.booking_service.ticket.enums.TicketStatus;
 import theater_mgnt.microserivce.booking_service.ticket.mapper.TicketMapper;
 import theater_mgnt.microserivce.booking_service.ticket.repository.TicketRepository;
+import theater_mgnt.microserivce.booking_service.client.CatalogClient;
+import theater_mgnt.microserivce.booking_service.client.dto.ShowtimeValidationResponse;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -38,6 +40,7 @@ public class TicketServiceImpl implements TicketService {
     private final TicketMapper ticketMapper;
     private final TicketCodeGenerator ticketCodeGenerator;
     private final QrGenerator qrGenerator;
+    private final CatalogClient catalogClient;
 
     @Override
     public List<TicketResponse> getTicketsByBooking(String bookingId) {
@@ -81,6 +84,8 @@ public class TicketServiceImpl implements TicketService {
         // H7: use showtimeEndTime snapshotted from ShowtimeCreated event.
         // Fall back to now+3h only if not available (e.g. legacy rows without endTime).
         Instant fallbackExpiry = Instant.now().plus(3, ChronoUnit.HOURS);
+        
+        ShowtimeValidationResponse showtime = catalogClient.validateShowtime(booking.getShowtimeId());
 
         List<Ticket> tickets = seats.stream()
                 .map(seat -> {
@@ -93,6 +98,10 @@ public class TicketServiceImpl implements TicketService {
                             .seatReservationId(seat.getId())
                             .seatName(seat.getRowLabel() + seat.getSeatNumber())
                             .price(seat.getPrice())
+                            .movieTitle(showtime.getMovieTitle())
+                            .roomName(showtime.getRoomName())
+                            .showDate(showtime.getStartTime().toLocalDate())
+                            .showTime(showtime.getStartTime().toLocalTime())
                             .ticketCode(code)
                             .qrContent(qrGenerator.generateQrContent(code))
                             .status(TicketStatus.ACTIVE)

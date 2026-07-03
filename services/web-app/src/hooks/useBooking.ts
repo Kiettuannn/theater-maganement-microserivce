@@ -7,6 +7,7 @@ export interface BookingState {
   showtimeId: string | null;
   showtimeTime?: string;
   selectedSeats: string[];
+  selectedSeatNames?: string[];
   totalPrice: number;
   movieTitle?: string;
   cinemaName?: string;

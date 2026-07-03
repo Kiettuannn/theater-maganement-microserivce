@@ -28,6 +28,7 @@ public class InternalShowtimeController {
                 .endTime(s.getEndTime())
                 .status(s.getStatus().name())
                 .roomId(s.getRoom().getId())
+                .roomName(s.getRoom().getName())
                 .build();
     }
 }

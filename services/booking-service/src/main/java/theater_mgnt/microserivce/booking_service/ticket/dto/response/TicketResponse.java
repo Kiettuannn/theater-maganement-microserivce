@@ -6,6 +6,8 @@ import theater_mgnt.microserivce.booking_service.ticket.enums.TicketStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.LocalDateTime;
 
 @Data
@@ -19,6 +21,10 @@ public class TicketResponse {
     String qrContent;
     String seatName;
     BigDecimal price;
+    String movieTitle;
+    String roomName;
+    LocalDate showDate;
+    LocalTime showTime;
     TicketStatus status;
     Instant usedAt;
     Instant expiresAt;

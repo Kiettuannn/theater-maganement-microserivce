@@ -42,6 +42,7 @@ const Confirmation: FC = () => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
 
   useEffect(() => {
+    console.log("=== CONFIRMATION MOUNT ===", { bookingId });
     if (bookingId) {
       const saved = localStorage.getItem(`booking-${bookingId}`);
       if (saved) {
@@ -49,8 +50,11 @@ const Confirmation: FC = () => {
       }
 
       getTicketsByBooking(bookingId)
-        .then(setTickets)
-        .catch(() => console.error("Failed to fetch tickets"));
+        .then((res) => {
+          console.log("=== TICKETS FETCHED ===", res);
+          setTickets(res);
+        })
+        .catch((err) => console.error("Failed to fetch tickets", err));
     }
   }, [bookingId]);
 
@@ -68,6 +72,8 @@ const Confirmation: FC = () => {
       </div>
     );
   }
+
+  const firstTicket = tickets.length > 0 ? tickets[0] : null;
 
   const movie = getMovieById(booking.movieId);
   const cinema = getCinemaById(booking.cinemaId);
@@ -131,9 +137,9 @@ const Confirmation: FC = () => {
                       <QRCode
                         value={JSON.stringify({
                           bookingId: bookingId,
-                          movie: movie?.title,
-                          date: booking.date,
-                          seats: booking.selectedSeats,
+                          movie: firstTicket?.movieTitle,
+                          date: firstTicket?.showDate,
+                          seats: tickets.length > 0 ? tickets.map(t => t.seatName).join(', ') : booking.selectedSeats,
                         })}
                         style={{ margin: '0 auto' }}
                       />
@@ -150,46 +156,34 @@ const Confirmation: FC = () => {
 
                   <Space direction="vertical" style={{ width: '100%' }}>
                     <Row>
-                      <Col xs={12}>
+                      <Col xs={24}>
                         <Text type="secondary">Movie</Text>
-                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                          {movie?.title}
+                        <div style={{ fontWeight: 600, fontSize: '18px', marginTop: '4px' }}>
+                          {firstTicket?.movieTitle || booking.movieTitle}
                         </div>
                       </Col>
-                      <Col xs={12}>
-                        <Text type="secondary">Rating</Text>
-                        <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                          {movie?.rating.toFixed(1)}/10
-                        </div>
-                      </Col>
-                    </Row>
-
-                    <Row>
                       <Col xs={12}>
                         <Text type="secondary">Cinema</Text>
                         <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                          {cinema?.name}
+                          Cinestar Sinh Viên
                         </div>
                       </Col>
                       <Col xs={12}>
-                        <Text type="secondary">City</Text>
+                        <Text type="secondary">Room</Text>
                         <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                          {cinema?.city}
+                          {firstTicket?.roomName || "Standard"}
                         </div>
                       </Col>
-                    </Row>
-
-                    <Row>
                       <Col xs={12}>
                         <Text type="secondary">Date</Text>
                         <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                          {dayjs(booking.date).format('DD/MM/YYYY')}
+                          {dayjs(firstTicket?.showDate || booking.date).format('DD/MM/YYYY')}
                         </div>
                       </Col>
                       <Col xs={12}>
                         <Text type="secondary">Time</Text>
                         <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                          {showtime?.time}
+                          {firstTicket?.showTime || booking.showtimeTime}
                         </div>
                       </Col>
                     </Row>
@@ -198,7 +192,7 @@ const Confirmation: FC = () => {
                       <Col xs={12}>
                         <Text type="secondary">Seats</Text>
                         <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                          {booking.selectedSeats.sort().join(', ')}
+                          {tickets.length > 0 ? tickets.map(t => t.seatName).join(', ') : booking.selectedSeats.join(', ')}
                         </div>
                       </Col>
                       <Col xs={12}>

@@ -52,12 +52,17 @@ export const confirmBooking = (bookingId: string) =>
     httpClient.post(API.CONFIRM_BOOKING(bookingId))
   );
 
+export interface SeatSummary {
+  seatName: string;
+  price: number;
+}
+
 export interface BookingSummary {
-  bookingId: string;
+  id: string;
   status: string;
   totalAmount: number;
   expiresAt: string;
-  // other fields if needed
+  seats?: SeatSummary[];
 }
 
 export const getBookingSummary = (bookingId: string) =>
@@ -71,8 +76,13 @@ export interface Ticket {
   bookingId: string;
   showtimeId: string;
   seatId: string;
+  seatName?: string;
   price: number;
   status: string;
+  movieTitle?: string;
+  roomName?: string;
+  showDate?: string;
+  showTime?: string;
 }
 
 export const getTicketsByBooking = (bookingId: string) =>

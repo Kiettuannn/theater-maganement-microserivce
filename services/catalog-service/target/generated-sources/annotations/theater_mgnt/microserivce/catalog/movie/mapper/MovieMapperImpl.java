@@ -15,8 +15,8 @@ import theater_mgnt.microserivce.catalog.movie.entity.Movie;
 
 @Generated(
     value = "org.mapstruct.ap.MappingProcessor",
-    date = "2026-07-02T14:57:18+0700",
-    comments = "version: 1.5.5.Final, compiler: javac, environment: Java 24.0.2 (Oracle Corporation)"
+    date = "2026-07-02T19:52:09+0700",
+    comments = "version: 1.5.5.Final, compiler: javac, environment: Java 21.0.7 (Oracle Corporation)"
 )
 @Component
 public class MovieMapperImpl implements MovieMapper {

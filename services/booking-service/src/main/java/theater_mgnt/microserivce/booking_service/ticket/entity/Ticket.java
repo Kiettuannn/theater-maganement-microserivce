@@ -9,6 +9,8 @@ import theater_mgnt.microserivce.booking_service.ticket.enums.TicketStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.LocalDateTime;
 
 @Entity
@@ -45,6 +47,18 @@ public class Ticket extends BaseEntity {
 
     @Column(nullable = false, precision = 10, scale = 2)
     BigDecimal price;
+
+    @Column(name = "movie_title")
+    String movieTitle;
+
+    @Column(name = "room_name")
+    String roomName;
+
+    @Column(name = "show_date")
+    LocalDate showDate;
+
+    @Column(name = "show_time")
+    LocalTime showTime;
 
     /** "TK-" + UUID(8 chars uppercase) */
     @Column(name = "ticket_code", nullable = false, unique = true, length = 50)

@@ -38,7 +38,10 @@ const Checkout: FC = () => {
   useEffect(() => {
     if (bookingId) {
       getBookingSummary(bookingId)
-        .then(setSummary)
+        .then((res) => {
+          console.log("=== CHECKOUT SUMMARY ===", res);
+          setSummary(res);
+        })
         .catch(() => message.error("Failed to load booking details"));
     }
   }, [bookingId]);
@@ -267,7 +270,7 @@ const Checkout: FC = () => {
               <div>
                 <Text type="secondary">Seats</Text>
                 <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                  {booking.selectedSeats.sort().join(', ')}
+                  {summary?.seats?.length ? summary.seats.map(s => s.seatName).join(', ') : booking.selectedSeats.join(', ')}
                 </div>
               </div>
 

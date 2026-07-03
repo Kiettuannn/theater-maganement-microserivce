@@ -383,12 +383,17 @@ const Booking: FC = () => {
         currency: "VND",
       });
 
+      const seatNames = apiSeats
+        .filter(seat => booking.selectedSeats.includes(seat.seatReservationId))
+        .map(seat => seat.seatName);
+
       updateBooking({ 
         movieId: movie.id, 
         movieTitle: movie.title,
         cinemaName: selectedCinema?.name,
         showtimeTime: selectedShowtime?.time,
-        totalPrice: response.totalAmount 
+        totalPrice: response.totalAmount,
+        selectedSeatNames: seatNames
       });
       navigate(`/checkout/${response.id}`);
     } catch (error: any) {

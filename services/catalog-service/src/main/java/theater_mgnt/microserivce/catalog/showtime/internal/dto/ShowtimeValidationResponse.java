@@ -17,4 +17,5 @@ public class ShowtimeValidationResponse {
     LocalDateTime endTime;
     String status;
     String roomId;
+    String roomName;
 }
