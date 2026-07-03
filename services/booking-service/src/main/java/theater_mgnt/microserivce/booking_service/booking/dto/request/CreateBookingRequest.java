@@ -21,4 +21,6 @@ public class CreateBookingRequest {
     UUID idempotencyKey;
     /** Optional, defaults to VND */
     String currency;
+    String contactEmail;
+    String contactPhone;
 }

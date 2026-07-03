@@ -1,6 +1,7 @@
 package theater_mgnt.microserivce.booking_service.booking.service;
 
 import org.springframework.data.domain.Pageable;
+import theater_mgnt.microserivce.booking_service.booking.dto.request.ConfirmBookingRequest;
 import theater_mgnt.microserivce.booking_service.booking.dto.request.CreateBookingRequest;
 import theater_mgnt.microserivce.booking_service.booking.dto.response.BookingListResponse;
 import theater_mgnt.microserivce.booking_service.booking.dto.response.BookingSummaryResponse;
@@ -15,7 +16,7 @@ public interface BookingService {
 
     void cancelBooking(String bookingId);
 
-    void confirmBooking(String bookingId);
+    void confirmBooking(String bookingId, ConfirmBookingRequest request);
 
     BookingListResponse getBookings(BookingStatus status, String userId, String showtimeId, Pageable pageable);
 }

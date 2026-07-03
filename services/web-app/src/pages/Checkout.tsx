@@ -1,5 +1,5 @@
-import { FC, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { FC, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Form,
   Input,
@@ -14,14 +14,24 @@ import {
   message,
   Typography,
   Empty,
-} from 'antd';
-import { useParams } from 'react-router-dom';
-import { getMovieById, getCinemaById, getShowtimesByMovieId } from '../lib/mock-data';
-import { useBooking } from '../hooks/useBooking';
-import { getBookingSummary, confirmBooking, type BookingSummary } from '../services/booking';
-import dayjs from 'dayjs';
-import '../styles/App.css';
-import { useEffect } from 'react';
+  Checkbox,
+} from "antd";
+import { useParams } from "react-router-dom";
+import {
+  getMovieById,
+  getCinemaById,
+  getShowtimesByMovieId,
+} from "../lib/mock-data";
+import { useBooking } from "../hooks/useBooking";
+import {
+  getBookingSummary,
+  confirmBooking,
+  type BookingSummary,
+} from "../services/booking";
+import { getMyInfo, type UserResponse } from "../services/user";
+import dayjs from "dayjs";
+import "../styles/App.css";
+import { useEffect } from "react";
 
 const { Title, Text } = Typography;
 
@@ -30,10 +40,28 @@ const Checkout: FC = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const { booking, resetBooking } = useBooking();
-  const [paymentMethod, setPaymentMethod] = useState<string>('credit-card');
+  const [paymentMethod, setPaymentMethod] = useState<string>("credit-card");
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<BookingSummary | null>(null);
-  const [timeLeft, setTimeLeft] = useState<string>('');
+  const [timeLeft, setTimeLeft] = useState<string>("");
+  const [useAccountInfo, setUseAccountInfo] = useState(true);
+  const [userInfo, setUserInfo] = useState<UserResponse | null>(null);
+
+  useEffect(() => {
+    getMyInfo()
+      .then((res) => {
+        console.log("=== USER INFO FROM API ===", res);
+        setUserInfo(res);
+        if (res) {
+          form.setFieldsValue({
+            firstName: res.firstname || res.firstName || "",
+            lastName: res.lastname || res.lastName || "",
+            email: res.email || "",
+          });
+        }
+      })
+      .catch((err) => console.error("Failed to fetch user info", err));
+  }, [form]);
 
   useEffect(() => {
     if (bookingId) {
@@ -55,11 +83,13 @@ const Checkout: FC = () => {
         clearInterval(interval);
         setTimeLeft("00:00");
         message.warning("Booking expired!");
-        navigate('/');
+        navigate("/");
       } else {
         const minutes = Math.floor(diff / 60000);
         const seconds = Math.floor((diff % 60000) / 1000);
-        setTimeLeft(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+        setTimeLeft(
+          `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`,
+        );
       }
     }, 1000);
 
@@ -72,7 +102,7 @@ const Checkout: FC = () => {
         <Empty
           description="No booking found. Please start a new booking."
           children={
-            <Button type="primary" onClick={() => navigate('/')}>
+            <Button type="primary" onClick={() => navigate("/")}>
               Back to Home
             </Button>
           }
@@ -87,23 +117,26 @@ const Checkout: FC = () => {
       // Simulate payment processing
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      await confirmBooking(bookingId);
+      await confirmBooking(bookingId, values.email, values.phone);
 
       // Save local details so Confirmation page can render movie/cinema info
-      localStorage.setItem(`booking-${bookingId}`, JSON.stringify({
-        ...booking,
-        customerName: values.firstName + ' ' + values.lastName,
-        customerEmail: values.email,
-        customerPhone: values.phone,
-        paymentMethod,
-        paymentDate: new Date().toISOString(),
-      }));
+      localStorage.setItem(
+        `booking-${bookingId}`,
+        JSON.stringify({
+          ...booking,
+          customerName: (values.firstName || "") + " " + (values.lastName || ""),
+          customerEmail: values.email,
+          customerPhone: values.phone,
+          paymentMethod,
+          paymentDate: new Date().toISOString(),
+        }),
+      );
 
-      message.success('Payment successful!');
+      message.success("Payment successful!");
       resetBooking();
       navigate(`/confirmation/${bookingId}`);
     } catch (error: any) {
-      message.error(error.message || 'Payment failed. Please try again.');
+      message.error(error.message || "Payment failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -114,7 +147,7 @@ const Checkout: FC = () => {
       <Button
         type="text"
         onClick={() => navigate(-1)}
-        style={{ marginBottom: '24px', color: '#0052A3' }}
+        style={{ marginBottom: "24px", color: "#0052A3" }}
       >
         ← Back
       </Button>
@@ -122,12 +155,27 @@ const Checkout: FC = () => {
       <Row gutter={[32, 32]}>
         <Col xs={24} md={14}>
           <Card>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Title level={3} style={{ color: '#0052A3', margin: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <Title level={3} style={{ color: "#0052A3", margin: 0 }}>
                 Payment Details
               </Title>
               {timeLeft && (
-                <div style={{ background: '#FFF1F0', border: '1px solid #FFA39E', padding: '4px 12px', borderRadius: '4px', color: '#CF1322', fontWeight: 'bold' }}>
+                <div
+                  style={{
+                    background: "#FFF1F0",
+                    border: "1px solid #FFA39E",
+                    padding: "4px 12px",
+                    borderRadius: "4px",
+                    color: "#CF1322",
+                    fontWeight: "bold",
+                  }}
+                >
                   Expires in: {timeLeft}
                 </div>
               )}
@@ -135,66 +183,107 @@ const Checkout: FC = () => {
             <Divider />
 
             <Form form={form} layout="vertical" onFinish={handleSubmit}>
+              <div style={{ marginBottom: "24px" }}>
+                <Checkbox
+                  checked={useAccountInfo}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setUseAccountInfo(checked);
+                    if (checked && userInfo) {
+                      form.setFieldsValue({
+                        firstName: userInfo.firstname || userInfo.firstName || "",
+                        lastName: userInfo.lastname || userInfo.lastName || "",
+                        email: userInfo.email || "",
+                      });
+                    }
+                  }}
+                >
+                  Use account information
+                </Checkbox>
+              </div>
+
               <Form.Item
                 label="First Name"
                 name="firstName"
-                rules={[{ required: true, message: 'Please enter first name' }]}
+                rules={[{ required: !useAccountInfo, message: "Please enter first name" }]}
               >
-                <Input size="large" placeholder="John" />
+                <Input
+                  size="large"
+                  placeholder="John"
+                  disabled={useAccountInfo}
+                />
               </Form.Item>
 
               <Form.Item
                 label="Last Name"
                 name="lastName"
-                rules={[{ required: true, message: 'Please enter last name' }]}
+                rules={[{ required: !useAccountInfo, message: "Please enter last name" }]}
               >
-                <Input size="large" placeholder="Doe" />
+                <Input
+                  size="large"
+                  placeholder="Doe"
+                  disabled={useAccountInfo}
+                />
               </Form.Item>
 
               <Form.Item
                 label="Email"
                 name="email"
                 rules={[
-                  { required: true, message: 'Please enter email' },
-                  { type: 'email', message: 'Invalid email format' },
+                  { required: true, message: "Please enter email" },
+                  { type: "email", message: "Invalid email format" },
                 ]}
               >
-                <Input size="large" placeholder="john@example.com" type="email" />
+                <Input
+                  size="large"
+                  placeholder="john@example.com"
+                  type="email"
+                  disabled={useAccountInfo}
+                />
               </Form.Item>
 
               <Form.Item
                 label="Phone Number"
                 name="phone"
-                rules={[{ required: true, message: 'Please enter phone number' }]}
+                rules={[
+                  { required: true, message: "Please enter phone number" },
+                ]}
               >
                 <Input size="large" placeholder="+84 123 456 789" />
               </Form.Item>
 
               <Divider />
 
-              <div style={{ marginBottom: '24px' }}>
-                <Text strong style={{ fontSize: '16px' }}>
+              <div style={{ marginBottom: "24px" }}>
+                <Text strong style={{ fontSize: "16px" }}>
                   Payment Method
                 </Text>
                 <Radio.Group
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value)}
-                  style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+                  style={{
+                    marginTop: "12px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "12px",
+                  }}
                 >
                   <Radio value="credit-card">Credit/Debit Card</Radio>
                   <Radio value="bank-transfer">Bank Transfer</Radio>
-                  <Radio value="e-wallet">E-wallet (PayPal, GooglePay, etc.)</Radio>
+                  <Radio value="e-wallet">
+                    E-wallet (PayPal, GooglePay, etc.)
+                  </Radio>
                 </Radio.Group>
               </div>
 
-              {paymentMethod === 'credit-card' && (
-                <Space direction="vertical" style={{ width: '100%' }}>
+              {paymentMethod === "credit-card" && (
+                <Space direction="vertical" style={{ width: "100%" }}>
                   <Form.Item
                     label="Card Number"
                     name="cardNumber"
                     rules={[
-                      { required: true, message: 'Please enter card number' },
-                      { len: 16, message: 'Card number must be 16 digits' },
+                      { required: true, message: "Please enter card number" },
+                      { len: 16, message: "Card number must be 16 digits" },
                     ]}
                   >
                     <Input
@@ -209,7 +298,12 @@ const Checkout: FC = () => {
                       <Form.Item
                         label="Expiry Date"
                         name="expiry"
-                        rules={[{ required: true, message: 'Please enter expiry date' }]}
+                        rules={[
+                          {
+                            required: true,
+                            message: "Please enter expiry date",
+                          },
+                        ]}
                       >
                         <Input size="large" placeholder="MM/YY" maxLength={5} />
                       </Form.Item>
@@ -218,7 +312,9 @@ const Checkout: FC = () => {
                       <Form.Item
                         label="CVV"
                         name="cvv"
-                        rules={[{ required: true, message: 'Please enter CVV' }]}
+                        rules={[
+                          { required: true, message: "Please enter CVV" },
+                        ]}
                       >
                         <Input
                           size="large"
@@ -238,45 +334,57 @@ const Checkout: FC = () => {
                 block
                 htmlType="submit"
                 loading={loading}
-                style={{ marginTop: '24px' }}
+                style={{ marginTop: "24px" }}
                 disabled={!summary}
               >
-                {loading ? 'Processing...' : `Pay ${(summary?.totalAmount || booking.totalPrice).toLocaleString()} VND`}
+                {loading
+                  ? "Processing..."
+                  : `Pay ${(summary?.totalAmount || booking.totalPrice).toLocaleString()} VND`}
               </Button>
             </Form>
           </Card>
         </Col>
 
         <Col xs={24} md={10}>
-          <Card title="Booking Summary" style={{ position: 'sticky', top: '20px' }}>
-            <Space direction="vertical" style={{ width: '100%' }} size="large">
+          <Card
+            title="Booking Summary"
+            style={{ position: "sticky", top: "20px" }}
+          >
+            <Space direction="vertical" style={{ width: "100%" }} size="large">
               <div>
                 <Text type="secondary">Movie</Text>
-                <div style={{ fontWeight: 600, marginTop: '4px' }}>{booking.movieTitle}</div>
+                <div style={{ fontWeight: 600, marginTop: "4px" }}>
+                  {booking.movieTitle}
+                </div>
               </div>
 
               <div>
-                <Text type="secondary">Cinema</Text>
-                <div style={{ fontWeight: 600, marginTop: '4px' }}>{booking.cinemaName}</div>
+                <Text type="secondary">Room</Text>
+                <div style={{ fontWeight: 600, marginTop: "4px" }}>
+                  {booking.cinemaName}
+                </div>
               </div>
 
               <div>
                 <Text type="secondary">Date & Time</Text>
-                <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                  {dayjs(booking.date).format('DD/MM/YYYY')} at {booking.showtimeTime}
+                <div style={{ fontWeight: 600, marginTop: "4px" }}>
+                  {dayjs(booking.date).format("DD/MM/YYYY")} at{" "}
+                  {booking.showtimeTime}
                 </div>
               </div>
 
               <div>
                 <Text type="secondary">Seats</Text>
-                <div style={{ fontWeight: 600, marginTop: '4px' }}>
-                  {summary?.seats?.length ? summary.seats.map(s => s.seatName).join(', ') : booking.selectedSeats.join(', ')}
+                <div style={{ fontWeight: 600, marginTop: "4px" }}>
+                  {summary?.seats?.length
+                    ? summary.seats.map((s) => s.seatName).join(", ")
+                    : booking.selectedSeats.join(", ")}
                 </div>
               </div>
 
               <div>
                 <Text type="secondary">Number of Seats</Text>
-                <div style={{ fontWeight: 600, marginTop: '4px' }}>
+                <div style={{ fontWeight: 600, marginTop: "4px" }}>
                   {booking.selectedSeats.length}
                 </div>
               </div>
@@ -295,10 +403,13 @@ const Checkout: FC = () => {
 
               <Divider />
 
-              <Row justify="space-between" style={{ fontSize: '18px' }}>
+              <Row justify="space-between" style={{ fontSize: "18px" }}>
                 <Text strong>Total:</Text>
-                <Text strong style={{ color: '#0052A3' }}>
-                  {(summary?.totalAmount || booking.totalPrice).toLocaleString()} VND
+                <Text strong style={{ color: "#0052A3" }}>
+                  {(
+                    summary?.totalAmount || booking.totalPrice
+                  ).toLocaleString()}{" "}
+                  VND
                 </Text>
               </Row>
             </Space>

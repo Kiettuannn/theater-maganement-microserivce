@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import theater_mgnt.microserivce.booking_service.booking.dto.request.ConfirmBookingRequest;
 import theater_mgnt.microserivce.booking_service.booking.dto.request.CreateBookingRequest;
 import theater_mgnt.microserivce.booking_service.booking.dto.response.BookingListItemResponse;
 import theater_mgnt.microserivce.booking_service.booking.dto.response.BookingListResponse;
@@ -149,6 +150,8 @@ public class BookingServiceImpl implements BookingService {
                 .currency(currency)
                 .idempotencyKey(idempotencyKey)
                 .expiresAt(expiresAt)
+                .contactEmail(request.getContactEmail())
+                .contactPhone(request.getContactPhone())
                 .build();
         booking = bookingRepository.saveAndFlush(booking);
 
@@ -223,7 +226,7 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
-    public void confirmBooking(String bookingId) {
+    public void confirmBooking(String bookingId, ConfirmBookingRequest request) {
         Booking booking = findBookingOrThrow(bookingId);
         if (booking.getStatus() != BookingStatus.INITIATED
                 && booking.getStatus() != BookingStatus.PAYMENT_PENDING) {
@@ -231,6 +234,11 @@ public class BookingServiceImpl implements BookingService {
         }
         if (booking.getExpiresAt().isBefore(Instant.now())) {
             throw new AppException(ErrorCode.BOOKING_EXPIRED);
+        }
+
+        if (request != null) {
+            if (request.getContactEmail() != null) booking.setContactEmail(request.getContactEmail());
+            if (request.getContactPhone() != null) booking.setContactPhone(request.getContactPhone());
         }
 
         Instant now = Instant.now();
@@ -364,6 +372,8 @@ public class BookingServiceImpl implements BookingService {
         payload.put("totalAmount",      booking.getTotalAmount());
         payload.put("totalTicketsSold", seats.size());
         payload.put("showtimeDate",     booking.getShowtimeDate() != null ? booking.getShowtimeDate().toString() : "");
+        payload.put("contactEmail",     booking.getContactEmail());
+        payload.put("contactPhone",     booking.getContactPhone());
         java.util.Map<String, Object> wrapper = new java.util.HashMap<>();
         wrapper.put("eventType",  "BookingConfirmed");
         wrapper.put("occurredAt", Instant.now().toString());

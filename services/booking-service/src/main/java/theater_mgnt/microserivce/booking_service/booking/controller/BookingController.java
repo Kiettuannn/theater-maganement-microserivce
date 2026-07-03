@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
+import theater_mgnt.microserivce.booking_service.booking.dto.request.ConfirmBookingRequest;
 import theater_mgnt.microserivce.booking_service.booking.dto.request.CreateBookingRequest;
 import theater_mgnt.microserivce.booking_service.booking.dto.response.BookingListResponse;
 import theater_mgnt.microserivce.booking_service.booking.dto.response.BookingSummaryResponse;
@@ -41,8 +42,10 @@ public class BookingController {
     }
 
     @PostMapping("/{bookingId}/confirm")
-    public ApiResponse<String> confirmBooking(@PathVariable String bookingId) {
-        bookingService.confirmBooking(bookingId);
+    public ApiResponse<String> confirmBooking(
+            @PathVariable String bookingId,
+            @RequestBody(required = false) ConfirmBookingRequest request) {
+        bookingService.confirmBooking(bookingId, request);
         return ApiResponse.<String>builder().result("Booking confirmed successfully").build();
     }
 
@@ -53,7 +56,7 @@ public class BookingController {
             @RequestParam(required = false) String showtimeId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, size, org.springframework.data.domain.Sort.by("createdAt").descending());
         return ApiResponse.<BookingListResponse>builder()
                 .result(bookingService.getBookings(status, userId, showtimeId, pageable))
                 .build();

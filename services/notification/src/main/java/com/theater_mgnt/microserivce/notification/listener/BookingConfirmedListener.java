@@ -2,10 +2,8 @@ package com.theater_mgnt.microserivce.notification.listener;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theater_mgnt.microserivce.notification.dto.event.OutboxEvent;
-import com.theater_mgnt.microserivce.notification.dto.response.UserResponse;
-import com.theater_mgnt.microserivce.notification.enums.EmailType;
 import com.theater_mgnt.microserivce.notification.enums.RecipientType;
-import com.theater_mgnt.microserivce.notification.httpClient.IdentityClient;
+import com.theater_mgnt.microserivce.notification.enums.EmailType;
 import com.theater_mgnt.microserivce.notification.service.EmailTemplateFactory;
 import com.theater_mgnt.microserivce.notification.service.NotificationService;
 import com.theater_mgnt.microserivce.notification.service.SocketIOService;
@@ -27,11 +25,10 @@ public class BookingConfirmedListener {
 
     NotificationService notificationService;
     EmailTemplateFactory emailTemplateFactory;
-    IdentityClient identityClient;
     SocketIOService socketIOService;
     ObjectMapper objectMapper;
 
-    @KafkaListener(topics = "cinema.booking.booking-confirmed", groupId = "${spring.kafka.consumer.group-id}")
+    @KafkaListener(topics = "cinema.booking.booking-confirmed", groupId = "${spring.kafka.consumer.group-id}", containerFactory = "stringKafkaListenerContainerFactory")
     public void handleBookingConfirmed(String message) {
         log.info("Received BookingConfirmedEvent message");
         try {
@@ -49,13 +46,13 @@ public class BookingConfirmedListener {
             Number totalTicketsSold = (Number) payload.get("totalTicketsSold");
 
             // 1. Get user email
-            UserResponse user = identityClient.getUser(userId);
-            if (user == null || user.getEmail() == null) {
-                log.warn("Cannot fetch user or email for userId: {}", userId);
+            String contactEmail = (String) payload.get("contactEmail");
+            String name = "Quý Khách";
+
+            if (contactEmail == null || contactEmail.isEmpty()) {
+                log.warn("BookingConfirmed event missing contactEmail for bookingId: {}", bookingId);
                 return;
             }
-
-            String name = (user.getLastName() != null ? user.getLastName() : "") + " " + (user.getFirstName() != null ? user.getFirstName() : "");
 
             // 2. Prepare Email
             Map<String, Object> variables = Map.of(
@@ -71,7 +68,7 @@ public class BookingConfirmedListener {
             Map<String, Object> metadata = Map.of(
                     "subject", "Vé của bạn đã được xuất thành công! Mã: BK-" + bookingId.substring(0, Math.min(8, bookingId.length())).toUpperCase(),
                     "htmlContent", htmlContent,
-                    "email", user.getEmail(),
+                    "email", contactEmail,
                     "category", "TRANSACTIONAL"
             );
 

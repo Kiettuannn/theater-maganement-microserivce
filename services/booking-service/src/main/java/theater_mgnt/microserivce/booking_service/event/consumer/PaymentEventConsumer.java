@@ -54,7 +54,7 @@ public class PaymentEventConsumer {
             log.info("PaymentConfirmed received for booking {} (method: {}, txn: {})",
                     bookingId, payload.getPaymentMethod(), payload.getTransactionCode());
 
-            bookingService.confirmBooking(bookingId);
+            bookingService.confirmBooking(bookingId, null);
 
             log.info("Booking {} confirmed via PaymentConfirmed event", bookingId);
 

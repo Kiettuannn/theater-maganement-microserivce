@@ -19,6 +19,8 @@ export const API = {
   AVAILABLE_SEATS: `booking/seat-reservations`,
 
   CREATE_BOOKING: "booking/bookings",
+  GET_BOOKINGS: "booking/bookings",
+  CANCEL_BOOKING: (bookingId: string) => `booking/bookings/${bookingId}/cancel`,
   CONFIRM_BOOKING: (bookingId: string) => `booking/bookings/${bookingId}/confirm`,
   BOOKING_SUMMARY: (bookingId: string) => `booking/bookings/${bookingId}/summary`,
   TICKETS_BY_BOOKING: (bookingId: string) => `booking/tickets/by-booking/${bookingId}`,

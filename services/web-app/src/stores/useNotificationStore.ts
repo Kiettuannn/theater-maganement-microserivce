@@ -19,6 +19,10 @@ interface NotificationState {
   addNotification: (notification: Omit<Notification, 'id'>) => void;
   removeNotification: (id: string) => void;
   clearNotifications: () => void;
+  
+  // Unread badge state
+  hasUnreadBooking: boolean;
+  setHasUnreadBooking: (status: boolean) => void;
 }
 
 export const useNotificationStore = create<NotificationState>()(
@@ -55,6 +59,9 @@ export const useNotificationStore = create<NotificationState>()(
       clearNotifications: () => {
         set({ notifications: [] });
       },
+      
+      hasUnreadBooking: false,
+      setHasUnreadBooking: (status) => set({ hasUnreadBooking: status }),
     }),
     { name: 'NotificationStore' }
   )

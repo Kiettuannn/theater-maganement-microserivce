@@ -47,9 +47,14 @@ export const createBooking = (request: CreateBookingRequest) =>
     httpClient.post(API.CREATE_BOOKING, request)
   );
 
-export const confirmBooking = (bookingId: string) =>
+export const confirmBooking = (bookingId: string, contactEmail?: string, contactPhone?: string) =>
   handleApiResponse<any>(
-    httpClient.post(API.CONFIRM_BOOKING(bookingId))
+    httpClient.post(API.CONFIRM_BOOKING(bookingId), { contactEmail, contactPhone })
+  );
+
+export const cancelBooking = (bookingId: string) =>
+  handleApiResponse<any>(
+    httpClient.post(API.CANCEL_BOOKING(bookingId))
   );
 
 export interface SeatSummary {
@@ -88,4 +93,29 @@ export interface Ticket {
 export const getTicketsByBooking = (bookingId: string) =>
   handleApiResponse<Ticket[]>(
     httpClient.get(API.TICKETS_BY_BOOKING(bookingId))
+  );
+
+export interface BookingListItem {
+  id: string;
+  bookingCode: string;
+  userId: string;
+  showtimeId: string;
+  seatCount: number;
+  totalAmount: number;
+  status: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface BookingListResponse {
+  bookings: BookingListItem[];
+  totalElements: number;
+  totalPages: number;
+  currentPage: number;
+  pageSize: number;
+}
+
+export const getMyBookings = (userId: string, page: number = 0, size: number = 10) =>
+  handleApiResponse<BookingListResponse>(
+    httpClient.get(API.GET_BOOKINGS, { params: { userId, page, size } })
   );

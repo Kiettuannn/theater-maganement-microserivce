@@ -1,9 +1,12 @@
 import { FC, useState, useEffect } from 'react';
-import { Table, Card, Empty, Button, Row, Col, Space, Typography, Badge } from 'antd';
+import { Table, Card, Empty, Button, Row, Col, Space, Typography, Badge, message } from 'antd';
 import { EyeOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
+import { useNotificationStore } from '../stores/useNotificationStore';
+import { getMyBookings, getTicketsByBooking, cancelBooking, BookingListItem } from '../services/booking';
+import { getMyInfo } from '../services/user';
 import '../styles/App.css';
 
 const { Title, Text } = Typography;
@@ -16,7 +19,7 @@ interface BookingRecord {
   time: string;
   seats: string;
   totalPrice: number;
-  status: 'confirmed' | 'cancelled';
+  status: string;
   paymentDate: string;
 }
 
@@ -24,46 +27,82 @@ const MyBookings: FC = () => {
   const navigate = useNavigate();
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalBookings, setTotalBookings] = useState(0);
+  const pageSize = 10;
+  const { setHasUnreadBooking } = useNotificationStore();
 
   useEffect(() => {
-    loadBookings();
-  }, []);
+    setHasUnreadBooking(false);
+    loadBookings(currentPage);
+  }, [setHasUnreadBooking, currentPage]);
 
-  const loadBookings = () => {
+  const loadBookings = async (page: number) => {
     setLoading(true);
     try {
-      const allBookings: BookingRecord[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('booking-ORD-')) {
-          const data = JSON.parse(localStorage.getItem(key) || '{}');
-          allBookings.push({
-            orderId: data.orderId,
-            movieTitle: data.movieTitle || 'Unknown Movie',
-            cinema: data.cinemaId || 'Unknown Cinema',
-            date: data.date,
-            time: data.showtimeId ? 'See Details' : 'TBA',
-            seats: data.selectedSeats.sort().join(', '),
-            totalPrice: data.totalPrice,
-            status: 'confirmed',
-            paymentDate: data.paymentDate,
-          });
-        }
+      const userInfo = await getMyInfo();
+      if (!userInfo) {
+        message.error("Please login to view your bookings");
+        setLoading(false);
+        return;
       }
-      setBookings(allBookings.reverse());
+
+      // Backend pages are 0-indexed
+      const res = await getMyBookings(userInfo.id, page - 1, pageSize);
+      setTotalBookings(res?.totalElements || 0);
+      
+      const allBookings: BookingRecord[] = await Promise.all(
+        (res?.bookings || []).map(async (b: BookingListItem) => {
+          let movieTitle = "TBA";
+          let date = b.createdAt;
+          let time = "TBA";
+          let seats = "";
+          
+          if (b.status === 'CONFIRMED') {
+            try {
+              const tickets = await getTicketsByBooking(b.id);
+              if (tickets && tickets.length > 0) {
+                movieTitle = tickets[0].movieTitle || "TBA";
+                date = tickets[0].showDate || b.createdAt;
+                time = tickets[0].showTime || "TBA";
+                seats = tickets.map((t: any) => t.seatName).filter(Boolean).join(', ');
+              }
+            } catch (err) {
+              console.error("Failed to fetch tickets for booking", b.id, err);
+            }
+          }
+          
+          return {
+            orderId: b.id,
+            movieTitle,
+            cinema: "Cinestar Sinh Viên",
+            date,
+            time,
+            seats: seats || "N/A",
+            totalPrice: b.totalAmount,
+            status: b.status,
+            paymentDate: b.createdAt
+          };
+        })
+      );
+      
+      setBookings(allBookings);
     } catch (error) {
       console.error('Error loading bookings:', error);
+      message.error("Failed to load bookings");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCancel = (orderId: string) => {
-    const key = `booking-${orderId}`;
-    const booking = JSON.parse(localStorage.getItem(key) || '{}');
-    booking.status = 'cancelled';
-    localStorage.setItem(key, JSON.stringify(booking));
-    loadBookings();
+  const handleCancel = async (orderId: string) => {
+    try {
+      await cancelBooking(orderId);
+      message.success("Booking cancelled successfully");
+      loadBookings();
+    } catch (err) {
+      message.error("Failed to cancel booking");
+    }
   };
 
   const columns: ColumnsType<BookingRecord> = [
@@ -71,7 +110,7 @@ const MyBookings: FC = () => {
       title: 'Order ID',
       dataIndex: 'orderId',
       key: 'orderId',
-      render: (text) => <span style={{ fontWeight: 600, color: '#0052A3' }}>{text}</span>,
+      render: (text) => <span style={{ fontWeight: 600, color: '#0052A3' }}>{text.substring(0, 8).toUpperCase()}</span>,
     },
     {
       title: 'Movie',
@@ -96,34 +135,44 @@ const MyBookings: FC = () => {
       title: 'Price',
       dataIndex: 'totalPrice',
       key: 'totalPrice',
-      render: (price) => <span>{price.toLocaleString()} VND</span>,
+      render: (price, record) => (
+        <span style={{ textDecoration: record.status !== 'CONFIRMED' ? 'line-through' : 'none', color: record.status !== 'CONFIRMED' ? '#999' : 'inherit' }}>
+          {price.toLocaleString()} VND
+        </span>
+      ),
       sorter: (a, b) => a.totalPrice - b.totalPrice,
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status) => (
-        <Badge
-          status={status === 'confirmed' ? 'success' : 'error'}
-          text={status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
-        />
-      ),
+      render: (status) => {
+        const isConfirmed = status === 'CONFIRMED';
+        const isCancelled = status === 'CANCELLED' || status === 'FAILED';
+        return (
+          <Badge
+            status={isConfirmed ? 'success' : isCancelled ? 'error' : 'warning'}
+            text={status}
+          />
+        );
+      },
     },
     {
       title: 'Actions',
       key: 'actions',
       render: (_, record) => (
         <Space>
-          <Button
-            type="primary"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => navigate(`/confirmation/${record.orderId}`)}
-          >
-            View
-          </Button>
-          {record.status === 'confirmed' && (
+          {record.status === 'CONFIRMED' && (
+            <Button
+              type="primary"
+              size="small"
+              icon={<EyeOutlined />}
+              onClick={() => navigate(`/confirmation/${record.orderId}`)}
+            >
+              View
+            </Button>
+          )}
+          {(record.status === 'INITIATED' || record.status === 'PAYMENT_PENDING') && (
             <Button
               danger
               size="small"
@@ -157,7 +206,10 @@ const MyBookings: FC = () => {
             loading={loading}
             rowKey="orderId"
             pagination={{
-              pageSize: 10,
+              current: currentPage,
+              pageSize: pageSize,
+              total: totalBookings,
+              onChange: (page) => setCurrentPage(page),
               showTotal: (total) => `Total ${total} bookings`,
             }}
             responsive

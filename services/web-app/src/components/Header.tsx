@@ -2,13 +2,19 @@ import { FC, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { UserOutlined, VideoCameraOutlined } from "@ant-design/icons";
 import { selectIsAuthenticated, useAuthStore } from "../stores";
+import { useNotificationStore } from "../stores/useNotificationStore";
+import { useSocketIO } from "../hooks/useSocketIO";
 import LoginModal from "./LoginModal";
+import { Badge } from "antd";
 import "../styles/App.css";
 
 const Header: FC = () => {
   const location = useLocation();
   const [loginOpen, setLoginOpen] = useState(false);
   const isSignedIn = useAuthStore(selectIsAuthenticated);
+  const { hasUnreadBooking } = useNotificationStore();
+
+  useSocketIO();
 
   const isActive = (path: string) => location.pathname === path;
   const handleLoginSuccess = () => {
@@ -46,12 +52,16 @@ const Header: FC = () => {
                   }
             }
           >
-            {isSignedIn ? <UserOutlined /> : "Sign In"}
+            <Badge dot={hasUnreadBooking}>
+              {isSignedIn ? <UserOutlined style={{ fontSize: '18px' }} /> : "Sign In"}
+            </Badge>
           </button>
           {isSignedIn && (
             <div className="user-menu-dropdown">
               <Link to="/my-bookings" className="user-menu-item">
-                My Bookings
+                <Badge dot={hasUnreadBooking} offset={[10, 0]}>
+                  My Bookings
+                </Badge>
               </Link>
               <Link to="/profile" className="user-menu-item">
                 Profile

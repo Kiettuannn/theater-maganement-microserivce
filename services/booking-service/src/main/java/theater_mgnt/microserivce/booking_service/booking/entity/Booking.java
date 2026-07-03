@@ -74,6 +74,12 @@ public class Booking extends BaseEntity {
     @Column(name = "expires_at", nullable = false)
     Instant expiresAt;
 
+    @Column(name = "contact_email")
+    String contactEmail;
+
+    @Column(name = "contact_phone", length = 20)
+    String contactPhone;
+
     /** Set when payment was confirmed */
     @Column(name = "confirmed_at")
     Instant confirmedAt;
