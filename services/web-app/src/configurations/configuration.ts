@@ -1,5 +1,6 @@
 export const CONFIG = {
   API: import.meta.env.VITE_API_URL || "http://localhost:8888/api",
+  SOCKET: import.meta.env.VITE_SOCKET_URL || "http://localhost:9093",
 }
 export const API = {
   LOGIN: "identity/auth/token",

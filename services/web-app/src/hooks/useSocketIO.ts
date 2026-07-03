@@ -5,6 +5,8 @@ import { useNotificationStore } from '../stores/useNotificationStore';
 import { getMyInfo } from '../services/user';
 import { message } from 'antd';
 
+import { CONFIG } from '../configurations/configuration';
+
 export const useSocketIO = () => {
   const isSignedIn = useAuthStore(selectIsAuthenticated);
   const { setHasUnreadBooking } = useNotificationStore();
@@ -18,7 +20,7 @@ export const useSocketIO = () => {
     getMyInfo().then((userInfo) => {
       if (!isMounted || !userInfo) return;
       
-      socket = io('http://localhost:9093', {
+      socket = io(CONFIG.SOCKET, {
         query: { accountId: userInfo.id },
         transports: ['websocket'],
       });
