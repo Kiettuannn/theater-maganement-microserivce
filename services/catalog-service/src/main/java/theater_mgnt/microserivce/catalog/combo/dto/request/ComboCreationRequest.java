@@ -15,15 +15,16 @@ import java.math.BigDecimal;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ComboCreationRequest {
 
-    @Size(min = 3, message = "COMBO_NAME_INVALID")
+    @NotBlank(message = "COMBO_NAME_REQUIRED")
+    @Size(min = 1, message = "COMBO_NAME_INVALID")
     String name;
 
-    @Size(min = 3, message = "COMBO_DESCRIPTION_INVALID")
+    @Size(min = 1, message = "COMBO_DESCRIPTION_INVALID")
     String description;
 
-    @NotNull
+    @NotNull(message = "COMBO_PRICE_REQUIRED")
     BigDecimal price;
 
-    @NotBlank
+    // imageUrl is optional — no @NotBlank
     String imageUrl;
 }

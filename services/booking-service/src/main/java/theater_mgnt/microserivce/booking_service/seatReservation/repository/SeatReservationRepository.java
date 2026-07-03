@@ -25,7 +25,6 @@ public interface SeatReservationRepository extends JpaRepository<SeatReservation
 
     /**
      * CAS-style atomic UPDATE: AVAILABLE → LOCKED, simultaneously linking booking_id.
-     * Fixes H6: single query instead of two separate writes.
      * Returns number of rows updated — caller checks == requested count.
      */
     @Modifying
@@ -37,7 +36,6 @@ public interface SeatReservationRepository extends JpaRepository<SeatReservation
 
     /**
      * Legacy: CAS-style atomic UPDATE AVAILABLE → LOCKED (without setting booking_id).
-     * Kept for backward compatibility; prefer lockSeatsForBooking in new code.
      */
     @Modifying
     @Query("UPDATE SeatReservation s SET s.status = 'LOCKED', s.lockedAt = :lockedAt " +
@@ -51,10 +49,10 @@ public interface SeatReservationRepository extends JpaRepository<SeatReservation
     void releaseLockedByBookingId(@Param("bookingId") String bookingId,
                                    @Param("releasedAt") Instant releasedAt);
 
-    /** Cancel seats (LOCKED or CONFIRMED) → CANCELLED on booking cancellation */
+    /** Cancel booking: reset LOCKED seats back to AVAILABLE so they can be re-booked */
     @Modifying
-    @Query("UPDATE SeatReservation s SET s.status = 'CANCELLED', s.releasedAt = :releasedAt " +
-           "WHERE s.bookingId = :bookingId")
+    @Query("UPDATE SeatReservation s SET s.status = 'AVAILABLE', s.releasedAt = :releasedAt, s.bookingId = null " +
+           "WHERE s.bookingId = :bookingId AND s.status IN ('LOCKED', 'INITIATED')")
     void cancelByBookingId(@Param("bookingId") String bookingId,
                             @Param("releasedAt") Instant releasedAt);
 
@@ -71,5 +69,7 @@ public interface SeatReservationRepository extends JpaRepository<SeatReservation
     void cancelAllByShowtimeId(@Param("showtimeId") String showtimeId);
 
     List<SeatReservation> findByShowtimeIdAndStatus(String showtimeId, SeatReservationStatus status);
-}
 
+    /** Used by RedisStartupSyncService to clear stale locks on startup */
+    List<SeatReservation> findByStatus(SeatReservationStatus status);
+}
