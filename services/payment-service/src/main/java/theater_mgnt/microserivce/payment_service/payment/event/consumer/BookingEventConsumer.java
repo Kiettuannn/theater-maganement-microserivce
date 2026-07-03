@@ -9,17 +9,16 @@ import org.springframework.transaction.annotation.Transactional;
 import theater_mgnt.microserivce.payment_service.payment.entity.Invoice;
 import theater_mgnt.microserivce.payment_service.payment.entity.InvoiceStatus;
 import theater_mgnt.microserivce.payment_service.payment.event.dto.BookingCreatedEvent;
+import theater_mgnt.microserivce.payment_service.payment.event.dto.BookingCombosUpdatedEvent;
 import theater_mgnt.microserivce.payment_service.payment.repository.InvoiceRepository;
 
 import java.math.BigDecimal;
 
 /**
- * Listens to BookingCreated events from Booking Service.
- * Auto-creates a PENDING Invoice so the customer can proceed to payment
- * without a separate HTTP call.
+ * Listens to booking-related events from Booking Service.
  *
- * Topic: cinema.booking.booking-created
- * Published by: Booking Service outbox relay
+ * - BookingCreated       → auto-creates a PENDING Invoice (seats only)
+ * - BookingCombosUpdated → syncs invoice.totalAmount = seat + combo total
  */
 @Slf4j
 @Component
@@ -28,6 +27,8 @@ public class BookingEventConsumer {
 
     private final InvoiceRepository invoiceRepository;
     private final ObjectMapper objectMapper;
+
+    // ── Handle BookingCreated → create PENDING invoice ──────────────────────
 
     @KafkaListener(
             topics = "cinema.booking.booking-created",
@@ -68,8 +69,49 @@ public class BookingEventConsumer {
 
         } catch (Exception e) {
             log.error("Failed to process BookingCreated event: {}", e.getMessage(), e);
-            // Re-throwing causes Kafka to retry (based on consumer error handler config)
-            // For now, log and absorb to avoid poison pill blocking
+        }
+    }
+
+    // ── Handle BookingCombosUpdated → sync invoice.totalAmount ──────────────
+
+    /**
+     * When user adds combos to an existing booking, booking-service publishes this event.
+     * Update the PENDING invoice's totalAmount to include seat + combo prices.
+     *
+     * If user chose NO combos, this event is NOT published → invoice stays at seat-only total ✅
+     */
+    @KafkaListener(
+            topics = "cinema.booking.combos-updated",
+            groupId = "payment-service",
+            containerFactory = "kafkaListenerContainerFactory"
+    )
+    @Transactional
+    public void onBookingCombosUpdated(String message) {
+        try {
+            BookingCombosUpdatedEvent event = objectMapper.readValue(message, BookingCombosUpdatedEvent.class);
+            BookingCombosUpdatedEvent.Payload payload = event.getPayload();
+
+            if (payload == null || payload.getBookingId() == null) {
+                log.warn("BookingCombosUpdated event has null payload — skipping");
+                return;
+            }
+
+            String bookingId = payload.getBookingId();
+            BigDecimal newTotal = payload.getTotalAmount() != null ? payload.getTotalAmount() : BigDecimal.ZERO;
+
+            invoiceRepository.findByBookingId(bookingId).ifPresentOrElse(invoice -> {
+                // Only update if invoice is still PENDING (not yet paid/failed)
+                if (invoice.getStatus() == InvoiceStatus.PENDING) {
+                    invoice.setTotalAmount(newTotal);
+                    invoiceRepository.save(invoice);
+                    log.info("Invoice for booking {} totalAmount updated to {} (combos synced)", bookingId, newTotal);
+                } else {
+                    log.warn("Invoice for booking {} is already {} — combo sync skipped", bookingId, invoice.getStatus());
+                }
+            }, () -> log.warn("No invoice found for booking {} — combo sync skipped (race condition?)", bookingId));
+
+        } catch (Exception e) {
+            log.error("Failed to process BookingCombosUpdated event: {}", e.getMessage(), e);
         }
     }
 }

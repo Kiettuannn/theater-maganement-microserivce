@@ -54,8 +54,34 @@ public class SeatLockService {
         }
     }
 
+
     public void releaseAll(String showtimeId, List<String> seatIds) {
         seatIds.forEach(seatId -> safeDelete(buildKey(showtimeId, seatId)));
+    }
+
+    /**
+     * Release a lock for a specific showtime+seatId if the lock holder matches.
+     * Used by startup sync to clear stale locks for AVAILABLE seats.
+     */
+    public void releaseIfExists(String showtimeId, String seatId) {
+        safeDelete(buildKey(showtimeId, seatId));
+    }
+
+    /**
+     * Scan and delete all seat:lock keys matching a pattern.
+     * WARNING: SCAN-based, use only at startup — not in hot paths.
+     */
+    public long clearAllLocksForShowtime(String showtimeId) {
+        try {
+            String pattern = KEY_PREFIX + showtimeId + ":*";
+            var keys = redisTemplate.keys(pattern);
+            if (keys == null || keys.isEmpty()) return 0;
+            Long deleted = redisTemplate.delete(keys);
+            return deleted != null ? deleted : 0;
+        } catch (DataAccessException e) {
+            log.warn("Redis unavailable when clearing locks for showtime {}: {}", showtimeId, e.getMessage());
+            return 0;
+        }
     }
 
     private void safeDelete(String key) {
@@ -66,7 +92,7 @@ public class SeatLockService {
         }
     }
 
-    private String buildKey(String showtimeId, String seatId) {
+    public String buildKey(String showtimeId, String seatId) {
         return KEY_PREFIX + showtimeId + ":" + seatId;
     }
 }

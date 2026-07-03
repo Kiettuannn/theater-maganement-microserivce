@@ -1,5 +1,5 @@
 server:
-  port: 8082
+  port: 8084
   servlet:
     context-path: /catalog
 
@@ -8,7 +8,7 @@ spring:
     name: catalog-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5434/catalog_db
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/catalog_db
     driver-class-name: org.postgresql.Driver
     username: admin
     password: admin123
@@ -25,7 +25,7 @@ spring:
 
   data:
     redis:
-      host: localhost
+      host: ${REDIS_HOST:localhost}
       port: 6379
 
   cache:
@@ -34,7 +34,7 @@ spring:
       time-to-live: 300000  # TTL mặc định: 5 phút (ms), bị override bởi RedisConfig.java
 
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_HOST:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer

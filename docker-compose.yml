@@ -1,122 +1,116 @@
 services:
+
+  # ─── DATABASES ───────────────────────────────────────────────────────────────
+
   identity-db:
     image: mysql:8.0
     container_name: identity-db
     restart: always
-
     environment:
       MYSQL_DATABASE: identity_db
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_USER: admin
       MYSQL_PASSWORD: admin
-
-    ports:
-      - "3306:3306"
-
     volumes:
       - identity_mysql_data:/var/lib/mysql
-
     networks:
       - microservices-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   booking-db:
     image: postgres:16
     container_name: booking-db
     restart: always
-
     environment:
       POSTGRES_DB: booking_db
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin123
-
-    ports:
-      - "5433:5432"
-
     volumes:
       - booking_postgres_data:/var/lib/postgresql/data
-
     networks:
       - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d booking_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   catalog-db:
     image: postgres:16
     container_name: catalog-db
     restart: always
-
     environment:
       POSTGRES_DB: catalog_db
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin123
-
-    ports:
-      - "5434:5432"
-
     volumes:
       - catalog_postgres_data:/var/lib/postgresql/data
-
     networks:
       - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d catalog_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   payment-db:
     image: postgres:16
     container_name: payment-db
     restart: always
-
     environment:
       POSTGRES_DB: payment_db
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin123
-
-    ports:
-      - "5435:5432"
-
     volumes:
       - payment_postgres_data:/var/lib/postgresql/data
-
     networks:
       - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d payment_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   notification-db:
     image: postgres:16
     container_name: notification-db
     restart: always
-
     environment:
       POSTGRES_DB: notification_db
       POSTGRES_USER: root
       POSTGRES_PASSWORD: root
-
-    ports:
-      - "5432:5432"
-
     volumes:
       - notification_postgres_data:/var/lib/postgresql/data
-
     networks:
       - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d notification_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── REDIS ───────────────────────────────────────────────────────────────────
 
   redis:
     image: redis:7
     container_name: redis
     restart: always
-
-    ports:
-      - "6379:6379"
-
     networks:
       - microservices-network
+
+  # ─── KAFKA ───────────────────────────────────────────────────────────────────
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
     container_name: zookeeper
     restart: always
-
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-
-    ports:
-      - "2181:2181"
-
     networks:
       - microservices-network
 
@@ -126,23 +120,130 @@ services:
     restart: always
     depends_on:
       - zookeeper
-
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # PLAINTEXT_HOST dùng cho kết nối từ máy host (localhost:9092)
-      # PLAINTEXT dùng cho kết nối nội bộ giữa các container (kafka:29092)
+      # PLAINTEXT     — giao tiếp nội bộ giữa các container (kafka:29092)
+      # PLAINTEXT_HOST — giao tiếp từ máy host khi dev local (localhost:9092)
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-
-    ports:
-      - "9092:9092"
-
     networks:
       - microservices-network
+
+  # ─── BACKEND SERVICES ────────────────────────────────────────────────────────
+
+  identity-service:
+    image: ${DOCKER_USERNAME}/theater-identity:latest
+    container_name: identity-service
+    restart: always
+    environment:
+      DB_HOST: identity-db
+      KAFKA_HOST: kafka:29092
+    depends_on:
+      identity-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - microservices-network
+
+  booking-service:
+    image: ${DOCKER_USERNAME}/theater-booking:latest
+    container_name: booking-service
+    restart: always
+    environment:
+      DB_HOST: booking-db
+      REDIS_HOST: redis
+      KAFKA_HOST: kafka:29092
+      CATALOG_SERVICE_HOST: catalog-service
+    depends_on:
+      booking-db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_started
+    networks:
+      - microservices-network
+
+  catalog-service:
+    image: ${DOCKER_USERNAME}/theater-catalog:latest
+    container_name: catalog-service
+    restart: always
+    environment:
+      DB_HOST: catalog-db
+      REDIS_HOST: redis
+      KAFKA_HOST: kafka:29092
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_started
+    networks:
+      - microservices-network
+
+  payment-service:
+    image: ${DOCKER_USERNAME}/theater-payment:latest
+    container_name: payment-service
+    restart: always
+    environment:
+      DB_HOST: payment-db
+      KAFKA_HOST: kafka:29092
+      BOOKING_SERVICE_HOST: booking-service
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET}
+      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL}
+    depends_on:
+      payment-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - microservices-network
+
+  notification-service:
+    image: ${DOCKER_USERNAME}/theater-notification:latest
+    container_name: notification-service
+    restart: always
+    environment:
+      DB_HOST: notification-db
+      KAFKA_HOST: kafka:29092
+      BREVO_KEY: ${BREVO_KEY}
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - microservices-network
+
+  api-gateway:
+    image: ${DOCKER_USERNAME}/theater-api-gateway:latest
+    container_name: api-gateway
+    restart: always
+    ports:
+      - "8888:8888"   # Chỉ service này expose ra ngoài internet
+    environment:
+      IDENTITY_SERVICE_HOST: identity-service
+      BOOKING_SERVICE_HOST: booking-service
+      CATALOG_SERVICE_HOST: catalog-service
+      PAYMENT_SERVICE_HOST: payment-service
+      NOTIFICATION_SERVICE_HOST: notification-service
+    depends_on:
+      - identity-service
+      - booking-service
+      - catalog-service
+      - payment-service
+      - notification-service
+    networks:
+      - microservices-network
+
+# ─── VOLUMES ─────────────────────────────────────────────────────────────────
 
 volumes:
   identity_mysql_data:
@@ -150,6 +251,8 @@ volumes:
   catalog_postgres_data:
   payment_postgres_data:
   notification_postgres_data:
+
+# ─── NETWORKS ────────────────────────────────────────────────────────────────
 
 networks:
   microservices-network:
