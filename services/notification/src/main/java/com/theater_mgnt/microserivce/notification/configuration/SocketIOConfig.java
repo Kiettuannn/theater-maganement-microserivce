@@ -19,7 +19,7 @@ public class SocketIOConfig {
         com.corundumstudio.socketio.Configuration config = new com.corundumstudio.socketio.Configuration();
         config.setHostname(host);
         config.setPort(port);
-        // Additional configuration for origin and auth can be added here
+        config.setOrigin("*"); // Allow all origins for CORS
         return new SocketIOServer(config);
     }
 }
