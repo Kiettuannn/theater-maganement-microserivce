@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Vé Xem Phim Của Bạn</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f4f4f4; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header { text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
+        .header h1 { color: #2b6cb0; margin: 0; font-size: 24px; }
+        .content p { font-size: 16px; line-height: 1.6; }
+        .details-box { background-color: #f7fafc; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #3182ce; }
+        .details-box p { margin: 8px 0; }
+        .details-box strong { display: inline-block; width: 120px; color: #4a5568; }
+        .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 14px; color: #718096; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Cảm ơn bạn đã đặt vé tại <span th:text="${appName}">App</span>!</h1>
+        </div>
+        <div class="content">
+            <p>Xin chào <strong th:text="${name}">Customer</strong>,</p>
+            <p>Thanh toán của bạn đã được xác nhận thành công. Dưới đây là thông tin về đơn đặt vé của bạn:</p>
+            
+            <div class="details-box">
+                <p><strong>Mã Đặt Vé:</strong> <span th:text="${bookingId}">BK-XXXX</span></p>
+                <p><strong>Ngày Chiếu:</strong> <span th:text="${showtimeDate}">YYYY-MM-DD</span></p>
+                <p><strong>Số lượng ghế:</strong> <span th:text="${totalTickets}">0</span></p>
+                <p><strong>Tổng tiền:</strong> <span th:text="${revenue} + ' VND'">0 VND</span></p>
+            </div>
+            
+            <p>Vui lòng xuất trình vé hoặc quét mã QR tại quầy vé khi đến rạp. Chúc bạn có một trải nghiệm xem phim tuyệt vời!</p>
+            <p>Nếu bạn cần hỗ trợ, đừng ngần ngại liên hệ với chúng tôi.</p>
+        </div>
+        <div class="footer">
+            <p>&copy; <span th:text="${year}">2026</span> <span th:text="${companyName}">Company</span>. All rights reserved.</p>
+            <p th:text="${companyAddress}">Address</p>
+            <p><a th:href="${companyUrl}" style="color: #3182ce; text-decoration: none;">Visit our website</a></p>
+        </div>
+    </div>
+</body>
+</html>
